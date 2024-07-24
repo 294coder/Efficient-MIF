@@ -1,0 +1,55 @@
+optimizer:
+  name: "adamw"
+  lr: !!float 9e-4
+  weight_decay: !!float 1e-5
+
+lr_scheduler:
+  name: "multi_step"
+  milestones: [800, 1200]
+  gamma: 0.1
+
+max_norm: 0.003
+
+path:
+  # train_path: '/Data2/DataSet/HISR/CAVE/train_cave(with_up)x4.h5'
+  # val_path: '/Data2/DataSet/HISR/CAVE/validation_cave(with_up)x4.h5'
+  train_path: '/Data2/ZiHanCao/datasets/pansharpening/wv3/training_wv3/train_wv3.h5'
+  val_path: '/Data2/ZiHanCao/datasets/pansharpening/wv3/training_wv3//valid_wv3.h5'
+  #  train_path: '/home/ZiHanCao/datasets/pansharpening/gf/training_gf2/train_gf2.h5'
+  #  val_path: '/home/ZiHanCao/datasets/pansharpening/gf/training_gf2/valid_gf2.h5'
+  #  train_path: '/home/ZiHanCao/datasets/pansharpening/qb/training_qb/train_qb.h5'
+  #  val_path: '/home/ZiHanCao/datasets/pansharpening/qb/training_qb/valid_qb.h5'
+
+#   train_path: "/Data2/ZiHanCao/datasets/HISI/new_cave/train_cave(with_up)x4.h5"
+#   val_path: "/home/ShangqiDeng/data/HSI/cave_x4/test_cavepatches64-2.h5"
+
+  #  train_path: "/home/ShangqiDeng/data/HSI/cave_x8/train_cave(with_up)x8_rgb.h5"
+  #  val_path: "/home/ZiHanCao/datasets/HISI/new_cave/x8/validation_cave(with_up)x8_rgb.h5"
+
+  # train_path: "/home/ShangqiDeng/data/HSI/cave_x8/train_cave(with_up)x8_rgb_16.h5"
+  # val_path: "/home/ShangqiDeng/data/HSI/cave_x8/test_cavepatches128-2.h5"
+
+  # train_path: "/Data2/ZiHanCao/datasets/HISI/new_harvard/x8/train_harvard(with_up)x8_rgb.h5"
+  # val_path: "/Data2/ZiHanCao/datasets/HISI/new_harvard/x8/test_clip_128.h5"
+
+  #   train_path: '/home/ZiHanCao/datasets/HISI/new_harvard/train_harvard(with_up)x4_rgb.h5'
+  #   val_path: '/home/ZiHanCao/datasets/HISI/new_harvard/validation_harvard(with_up)x4_rgb.h5'
+
+  # train_path: '/home/ZiHanCao/datasets/FLIR/train_vis_ir.h5'
+  # val_path: '/home/ZiHanCao/datasets/FLIR/val_vis_ir.h5'
+
+  # base_dir: '/home/ZiHanCao/datasets/RoadSceneFusion_1'
+  # base_dir: "/home/ZiHanCao/datasets/RoadScene_and_TNO/"
+
+
+network_configs:
+  band_hs: 8
+  band_ms: 1
+  mid_ch: 64
+  ratio: 4
+
+
+logger_config:
+  base_path: ./log_file/
+  name: cssnet
+  file_mode: w

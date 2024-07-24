@@ -4,9 +4,14 @@ optimizer:
   weight_decay: !!float 1e-7
 
 lr_scheduler:
-  name: 'cos_anneal'
-  T_max: 500
-  eta_min: !!float 1e-7
+  # name: 'cos_anneal'
+  # T_max: 500
+  # eta_min: !!float 1e-7
+
+  name: 'multi_step'
+  milestones: [400, 600]
+  gamma: 0.1
+
 #  name: 'plateau'
 #  mode: 'min'
 #  threshold: !!float 1e-4 # mse
@@ -21,8 +26,11 @@ path:
   #  val_path: '/Data2/DataSet/HISR/CAVE/validation_cave(with_up)x4.h5'
   #  train_path: '/media/office-401-remote/Elements SE/cao/ZiHanCao/datasets/pansharpening/wv3/training_wv3/train_wv3.h5'
   #  val_path: '/media/office-401-remote/Elements SE/cao/ZiHanCao/datasets/pansharpening/wv3/training_wv3/valid_wv3.h5'
-   train_path: '/media/office-401-remote/Elements SE/cao/ZiHanCao/datasets/pansharpening/gf/training_gf2/train_gf2.h5'
-   val_path: '/media/office-401-remote/Elements SE/cao/ZiHanCao/datasets/pansharpening/gf/training_gf2/valid_gf2.h5'
+  #  train_path: '/media/office-401-remote/Elements SE/cao/ZiHanCao/datasets/pansharpening/gf/training_gf2/train_gf2.h5'
+  #  val_path: '/media/office-401-remote/Elements SE/cao/ZiHanCao/datasets/pansharpening/gf/training_gf2/valid_gf2.h5'
+  train_path: '/Data2/ZiHanCao/datasets/pansharpening/GF5-GF1/tap23/train_GF5_GF1_23tap_new.h5'
+  val_path: '/Data2/ZiHanCao/datasets/pansharpening/GF5-GF1/tap23/test_GF5_GF1_23tap_new.h5'
+
   #  train_path: '/home/ZiHanCao/datasets/pansharpening/qb/training_qb/train_qb.h5'
   #  val_path: '/home/ZiHanCao/datasets/pansharpening/qb/training_qb/valid_qb.h5'
 #  train_path: '/home/ZiHanCao/datasets/HISI/new_cave/train_cave(with_up)x4.h5'
@@ -31,10 +39,12 @@ path:
   # val_path: '/home/ZiHanCao/datasets/HISI/new_harvard/validation_harvard(with_up)x4_rgb.h5'
 
 network_configs:
-  num_channel: 8
+  num_channel: 150
+  rgb_channel: 4
   num_feature: 48
+  scale: 2
 
 logger_config:
   base_path: ./log_file/
-  name: fusformer_gf2
+  name: fusformer_gf5
   file_mode: w

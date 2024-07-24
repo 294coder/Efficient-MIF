@@ -63,7 +63,7 @@ class WithBias_LayerNorm(nn.Module):
 
 
 class LayerNorm(nn.Module):
-    def __init__(self, dim, LayerNorm_type):
+    def __init__(self, dim, LayerNorm_type='WithBias'):
         super(LayerNorm, self).__init__()
         if LayerNorm_type == 'BiasFree':
             self.body = BiasFree_LayerNorm(dim)

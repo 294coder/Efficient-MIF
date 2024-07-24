@@ -6,7 +6,7 @@
 # @Author  : Xiao Wu
 # @reference:
 #
-from functools import partial, wraps
+from functools import partial
 from typing import Tuple, Union
 
 import torch
@@ -40,7 +40,7 @@ class PatchMergeModule(nn.Module):
         patch_size_list=[],
         scale=4,
         *,
-        hisi=True,
+        # hisi=True,
         device="cuda:0",
         bs_axis_merge=True,
     ):
@@ -65,7 +65,7 @@ class PatchMergeModule(nn.Module):
             self.split_func = lambda x, _, dim: [x]
         self.crop_batch_size = crop_batch_size
         self.patch_size_list = patch_size_list
-        print(f"patch_size: {patch_size_list}")
+        # print(f"patch_size: {patch_size_list}")
         self.scale = scale
 
         # decrepated attr
@@ -74,15 +74,14 @@ class PatchMergeModule(nn.Module):
         # net.eval()
         # self.forward = partial(net.patch_merge_step, hisi=hisi, split_size=patch_size)
         # self.hisi = hisi
-        assert (net is not None) or (
-            patch_merge_step is not None
-        ), "@net and @patch_merge_step cannot be None at the same time"
+        assert (net is not None) or (patch_merge_step is not None), "@net and @patch_merge_step cannot be None at the same time"
         if patch_merge_step:
             self.forward = patch_merge_step  # partial(self.patch_merge_step, split_size=patch_size_list)
         else:
-            self.forward = partial(
-                net.patch_merge_step, hisi=hisi, split_size=patch_size_list[-1]
-            )
+            # self.forward = partial(
+            #     net.patch_merge_step, hisi=hisi, split_size=patch_size_list[-1]
+            # )
+            self.forward = partial(net.patch_merge_step, split_size=patch_size_list[-1])
 
     # def forward(self, *x):
     #     assert len(x) == 2, print(len(x))
@@ -144,7 +143,7 @@ class PatchMergeModule(nn.Module):
                 .permute(2, 0, 1)
                 .contiguous()
             )
-            x_unfold = x_unfold.view(x_unfold.size(0), -1, c, h_padsize, w_padsize)
+            x_unfold = x_unfold.reshape(x_unfold.size(0), -1, c, h_padsize, w_padsize)
             x_unfold_list.append(x_unfold)
             x_range_list.append(
                 x_unfold.size(0) // batchsize + (x_unfold.size(0) % batchsize != 0)
@@ -244,7 +243,7 @@ class PatchMergeModule(nn.Module):
         # img->patch，最大计算crop_s个patch，防止bs*p*p太大
         ################################################
 
-        # x_unfold = x_unfold.view(x_unfold.size(0), -1, c, h_padsize, w_padsize)
+        # x_unfold = x_unfold.reshape(x_unfold.size(0), -1, c, h_padsize, w_padsize)
 
         # x_range = x_unfold.size(0) // batchsize + (x_unfold.size(0) % batchsize != 0)
         # x_unfold = x_unfold.to(device)
@@ -300,7 +299,7 @@ class PatchMergeModule(nn.Module):
             s_unfold = torch.cat(s_unfold, dim=0).cpu()
 
             y = F.fold(
-                s_unfold.view(s_unfold.size(0), -1, 1).transpose(0, 2).contiguous(),
+                s_unfold.reshape(s_unfold.size(0), -1, 1).transpose(0, 2).contiguous(),
                 ((h - h_cut) * scale, (w - w_cut) * scale),
                 (h_padsize * scale, w_padsize * scale),
                 stride=(int(hshave / 2 * scale), int(wshave / 2 * scale)),
@@ -322,7 +321,7 @@ class PatchMergeModule(nn.Module):
             ].contiguous()
 
             s_inter = F.fold(
-                s_unfold.view(s_unfold.size(0), -1, 1).transpose(0, 2).contiguous(),
+                s_unfold.reshape(s_unfold.size(0), -1, 1).transpose(0, 2).contiguous(),
                 ((h - h_cut - hshave) * scale, (w - w_cut - wshave) * scale),
                 (
                     h_padsize * scale - hshave * scale,
@@ -417,7 +416,7 @@ class PatchMergeModule(nn.Module):
                 .permute(2, 0, 1)
                 .contiguous()
             )  # transpose(0, 2)
-            x_h_cut_unfold = x_h_cut_unfold.view(
+            x_h_cut_unfold = x_h_cut_unfold.reshape(
                 x_h_cut_unfold.size(0), -1, c, *padsize_list[idx]
             )  # x_h_cut_unfold.size(0), -1, padsize, padsize
             x_h_cut_unfold_list.append(x_h_cut_unfold)
@@ -460,7 +459,7 @@ class PatchMergeModule(nn.Module):
             # nH*nW, c, k, k: 3, 3, 100, 100 (17, 3, 30, 120)
             # out_size=(30, 600), k=(30, 120)
             s_h_cut = F.fold(
-                s_h_cut_unfold.view(s_h_cut_unfold.size(0), -1, 1)
+                s_h_cut_unfold.reshape(s_h_cut_unfold.size(0), -1, 1)
                 .transpose(0, 2)
                 .contiguous(),
                 (padsize[0] * scale, (w - w_cut) * scale),
@@ -476,7 +475,7 @@ class PatchMergeModule(nn.Module):
             # 17, 3, 30, 60
             # out_size=(30, 540), k=(30, 90)
             s_h_cut_inter = F.fold(
-                s_h_cut_unfold.view(s_h_cut_unfold.size(0), -1, 1)
+                s_h_cut_unfold.reshape(s_h_cut_unfold.size(0), -1, 1)
                 .transpose(0, 2)
                 .contiguous(),
                 (padsize[0] * scale, (w - w_cut - shave[1]) * scale),
@@ -533,7 +532,7 @@ class PatchMergeModule(nn.Module):
                 .contiguous()
             )
 
-            x_w_cut_unfold = x_w_cut_unfold.view(
+            x_w_cut_unfold = x_w_cut_unfold.reshape(
                 x_w_cut_unfold.size(0), -1, c, *padsize_list[idx]
             )
             x_range = x_w_cut_unfold.size(0) // batchsize + (
@@ -592,7 +591,7 @@ class PatchMergeModule(nn.Module):
             # 109,3,30,120
             # out_size=(786, 120), k=(30, 120)
             s_w_cut = F.fold(
-                s_w_cut_unfold.view(s_w_cut_unfold.size(0), -1, 1)
+                s_w_cut_unfold.reshape(s_w_cut_unfold.size(0), -1, 1)
                 .transpose(0, 2)
                 .contiguous(),
                 ((h - h_cut) * scale, padsize[1] * scale),
@@ -608,7 +607,7 @@ class PatchMergeModule(nn.Module):
             # 109, 3, 16, 120
             # out_size=(771, 120), k=(15, 120)
             s_w_cut_inter = F.fold(
-                s_w_cut_unfold.view(s_w_cut_unfold.size(0), -1, 1)
+                s_w_cut_unfold.reshape(s_w_cut_unfold.size(0), -1, 1)
                 .transpose(0, 2)
                 .contiguous(),
                 ((h - h_cut - shave[0]) * scale, padsize[1] * scale),
@@ -642,33 +641,56 @@ class PatchMergeModule(nn.Module):
 
 # base model class
 # all model defination should inherit this class
-class BaseModel(nn.Module):
-    def __init__(self, **kwargs):
-        super(BaseModel, self).__init__(**kwargs)
-        pass
+from abc import ABC, abstractmethod
+class BaseModel(ABC, nn.Module):
+    
+    @classmethod
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        if not (cls._is_method_implemented('train_step') or cls._is_method_implemented('fusion_train_step')):
+            raise NotImplementedError(f"{cls.__name__} must implement at least one of the methods: 'train_step' or 'fusion_train_step'")
 
+        if not (cls._is_method_implemented('val_step') or cls._is_method_implemented('fusion_val_step')):
+            raise NotImplementedError(f"{cls.__name__} must implement at least one of the methods: 'val_step' or 'fusion_val_step'")
+
+    @staticmethod
+    def _is_method_implemented(method):
+        return any(method in B.__dict__ for B in BaseModel.__subclasses__())
+    
     def train_step(
         self, ms, lms, pan, gt, criterion
-    ) -> Union[Tuple[torch.Tensor], Tuple[Tensor, dict]]:
+    ) -> tuple[torch.Tensor, tuple[Tensor, dict[str, Tensor]]]:
         raise NotImplementedError
 
     def val_step(self, ms, lms, pan) -> torch.Tensor:
         raise NotImplementedError
-
-    def patch_merge_step(self, *args) -> torch.Tensor:
-        # not necessary
+    
+    def fusion_train_step(self, vis, ir, mask, gt, criterion) -> tuple[torch.Tensor, tuple[Tensor, dict[str, Tensor]]]:
+        raise NotImplementedError
+    
+    def fusion_val_step(self, vis, ir, mask) -> torch.Tensor:
         raise NotImplementedError
 
-    def forward(self, *args, mode="train"):
+    def patch_merge_step(self, *args) -> torch.Tensor:
+        # not compulsory
+        raise NotImplementedError
+
+    def forward(self, *args, mode="train", **kwargs):
         if mode == "train":
-            return self.train_step(*args)
+            return self.train_step(*args, **kwargs)
         elif mode == "eval":
-            return self.val_step(*args)
+            return self.val_step(*args, **kwargs)
+        elif mode == 'fusion_train':
+            return self.fusion_train_step(*args, **kwargs)
+        elif mode == 'fusion_eval':
+            return self.fusion_val_step(*args, **kwargs)
         elif mode == "patch_merge":
-            return self.patch_merge_step(*args)
+            raise DeprecationWarning("patch_merge is deprecated.")
+            # return self.patch_merge_step(*args, **kwargs)
         else:
             raise NotImplementedError
 
+    @abstractmethod
     def _forward_implem(self, *args, **kwargs):
         raise NotImplementedError
 
@@ -708,7 +730,23 @@ def gather_nd(tensor, indexes, ndim):
 
 
 if __name__ == "__main__":
-    lms = torch.randn([1, 31, 512, 512]).cuda()
-    ms = torch.randn([1, 31, 128, 128]).cuda()
-    model = PatchMergeModule(patch_size_list=[128, 32], crop_batch_size=8)
-    print(model.forward_chop(lms, ms)[0].shape)
+    # lms = torch.randn([1, 31, 512, 512]).cuda()
+    # ms = torch.randn([1, 31, 128, 128]).cuda()
+    # model = PatchMergeModule(patch_size_list=[128, 32], crop_batch_size=8)
+    # print(model.forward_chop(lms, ms)[0].shape)
+
+
+    class Model(BaseModel):
+        def __init__(self):
+            super(Model, self).__init__()
+
+        def fusion_train_step(self, ms, lms, pan, gt, criterion):
+            return torch.randn(1)
+
+        def val_step(self, ms, lms, pan):
+            return torch.randn(1)
+
+        def _forward_implem(self, *args, **kwargs):
+            return torch.randn(1)
+        
+    model = Model()

@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from einops import rearrange, repeat
 from einops.layers.torch import Rearrange
 
-from model.base_model import BaseModel, register_model
+from model.base_model import BaseModel, PatchMergeModule, register_model
 
 
 # -------------Initialization----------------------------------------
@@ -41,7 +41,7 @@ class MainNet(BaseModel):
         self.T_E = Transformer_E(num_feature)
         self.T_D = Transformer_D(num_feature)
         self.Embedding = nn.Sequential(
-            nn.Linear(num_channel + 1, num_feature),
+            nn.Linear(num_channel + 3, num_feature),
         )
         self.refine = nn.Sequential(
             nn.Conv2d(num_feature, num_feature, 3, 1, 1),
@@ -51,7 +51,7 @@ class MainNet(BaseModel):
 
     def _forward_implem(self, HSI, MSI):
         ################LR-HSI###################
-        UP_LRHSI = F.interpolate(HSI, scale_factor=4, mode='bicubic')  ### (b N h w)
+        UP_LRHSI = F.interpolate(HSI, scale_factor=8, mode='bicubic')  ### (b N h w)
         UP_LRHSI = UP_LRHSI.clamp_(0, 1)
         sz = UP_LRHSI.size(2)
         Data = torch.cat((UP_LRHSI, MSI), 1)
@@ -77,12 +77,12 @@ class MainNet(BaseModel):
 
     def patch_merge_step(self, ms, lms, pan, hisi=True, split_size=64):
         # all shape is 64
-        mms = F.interpolate(ms, size=(split_size // 2, split_size // 2), mode='bilinear', align_corners=True)
-        ms = F.interpolate(ms, size=(split_size // 4, split_size // 4), mode='bilinear', align_corners=True)
-        if hisi:
-            pan = pan[:, :3]
-        else:
-            pan = pan[:, :1]
+        # mms = F.interpolate(ms, size=(split_size // 2, split_size // 2), mode='bilinear', align_corners=True)
+        # ms = F.interpolate(ms, size=(split_size // 4, split_size // 4), mode='bilinear', align_corners=True)
+        # if hisi:
+        #     pan = pan[:, :3]
+        # else:
+        #     pan = pan[:, :1]
 
         sr = self._forward_implem(ms, pan)[0]
 
@@ -208,10 +208,27 @@ class Transformer_D(nn.Module):
 if __name__ == '__main__':
     import fvcore.nn as fvnn
 
-    net = MainNet(4)
-    ms = torch.randn(1, 4, 16, 16)
-    pan = torch.randn(1, 1, 64, 64)
-    print(net._forward_implem(ms, pan)[0].shape)
+    device = 'cuda:1'
+    net = MainNet(31).to(device)
+    ms = torch.randn(1, 31, 8, 8).to(device)
+    pan = torch.randn(1, 3, 64, 64).to(device)
+    # print(net._forward_implem(ms, pan)[0].qashape)
     
-    # analysis = fvnn.FlopCountAnalysis(net, (ms, pan))
-    # print(fvnn.flop_count_table(analysis))
+    import time
+    
+    # with torch.inference_mode():
+        # net = PatchMergeModule(net, crop_batch_size=12, patch_size_list=[16, 64, 64])
+        # net.forward_chop(ms, pan, pan)
+        # t1 = time.time()
+        
+        # print('===> testing time...')
+        # t1 = time.time()
+        # for _ in range(5):
+        #     net.forward_chop(ms, pan, pan)
+        
+        # print(f'===> test time {(time.time()-t1) / 5}')
+    
+    
+    net.forward = net._forward_implem
+    analysis = fvnn.FlopCountAnalysis(net, (ms, pan))
+    print(fvnn.flop_count_table(analysis))

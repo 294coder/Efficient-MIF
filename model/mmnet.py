@@ -354,19 +354,19 @@ class MMNet(BaseModel):
         self.stage0 = vanilla_stage()
         ### memory flow
         self.Uconv1 = C_RB(num_channels*3, num_channels*2, 3, 1, 1, bias=False, activation='prelu', norm=None, n_resblocks=2)
-        self.cellU = ConvLSTMCell((256, 256), 8, 8, [3, 3], False)
+        self.cellU = ConvLSTMCell((64, 64), 8, 8, [3, 3], False)
         self.Uconv2 = C_RB(num_channels*2, num_channels*2, 3, 1, 1, bias=False, activation='prelu', norm=None, n_resblocks=2)
 
         self.Hlconv1 = C_RB(num_channels*3, num_channels*2, 3, 1, 1, bias=False, activation='prelu', norm=None, n_resblocks=2)
-        self.cellHl = ConvLSTMCell((256, 256), 8, 8, [3, 3], False)
+        self.cellHl = ConvLSTMCell((64, 64), 8, 8, [3, 3], False)
         self.Hlconv2 = C_RB(num_channels*2, num_channels, 3, 1, 1, bias=False, activation='prelu', norm=None, n_resblocks=2)
 
         self.Vconv1 = C_RB(num_channels*3, num_channels*2, 3, 1, 1, bias=False, activation='prelu', norm=None, n_resblocks=2)
-        self.cellV = ConvLSTMCell((256, 256), 8, 8, [3, 3], False)
+        self.cellV = ConvLSTMCell((64, 64), 8, 8, [3, 3], False)
         self.Vconv2 = C_RB(num_channels*2, num_channels*2, 3, 1, 1, bias=False, activation='prelu', norm=None, n_resblocks=2)
 
         self.Hpconv1 = C_RB(num_channels*3, num_channels*2, 3, 1, 1, bias=False, activation='prelu', norm=None, n_resblocks=2)
-        self.cellHp = ConvLSTMCell((256, 256), 8, 8, [3, 3], False)
+        self.cellHp = ConvLSTMCell((64, 64), 8, 8, [3, 3], False)
         self.Hpconv2 = C_RB(num_channels*2, num_channels, 3, 1, 1, bias=False, activation='prelu', norm=None, n_resblocks=2)
 
         ## main branch
@@ -473,11 +473,11 @@ if __name__ == '__main__':
     # lms = torch.randn((1, 8, 64, 64)).cuda()
     # pan = torch.randn((1, 1, 64, 64)).cuda()
     
-    ms = torch.randn((1, 4, 64, 64)).cuda()
-    lms = torch.randn((1, 4, 256, 256)).cuda()
-    pan = torch.randn((1, 1, 256, 256)).cuda()
+    ms = torch.randn((80, 4, 16, 16)).cuda()
+    lms = torch.randn((80, 4, 64, 64)).cuda()
+    pan = torch.randn((80, 1, 64, 64)).cuda()
     
-    gt = torch.randn((1, 4, 256, 256)).cuda()
+    gt = torch.randn((80, 4, 64, 64)).cuda()
     sr, loss = model.train_step(ms, lms, pan, gt, F.l1_loss)
     loss.backward()
     
@@ -485,7 +485,7 @@ if __name__ == '__main__':
     print('Allocated:', round(memory_reserved(0)/1024**3, 1), 'GB')
     
     # summaries(model, grad=True)
+
+    # 3n6s08bo qb on 2
     
-    # gr6zqyvi gf2 on 2
-    # 3ayg071a qb on 2
-    
+    # frw0mwwn gf2 on 6

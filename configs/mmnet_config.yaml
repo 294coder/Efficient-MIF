@@ -1,36 +1,29 @@
 optimizer:
-  name: 'adamw'
-  lr: !!float 8e-4
+  name: "adamw"
+  lr: !!float 4e-4
   weight_decay: !!float 1e-7
 
 lr_scheduler:
   # name: 'cos_anneal'
   # T_max: 470
   # eta_min: !!float 1e-8
-  name: 'identity'
+  name: "identity"
 
 max_norm: 0.003
 
 path:
-#  train_path: '/Data2/DataSet/HISR/CAVE/train_cave(with_up)x4.h5'
-#  val_path: '/Data2/DataSet/HISR/CAVE/validation_cave(with_up)x4.h5'
-  # train_path: '/home/ZiHanCao/datasets/pansharpening/wv3/training_wv3/train_wv3.h5'
-  # val_path: '/home/ZiHanCao/datasets/pansharpening/wv3/training_wv3//valid_wv3.h5'
-#  train_path: '/home/ZiHanCao/datasets/pansharpening/gf/training_gf2/train_gf2.h5'
-#  val_path: '/home/ZiHanCao/datasets/pansharpening/gf/training_gf2/valid_gf2.h5'
+  #  train_path: '/Data2/DataSet/HISR/CAVE/train_cave(with_up)x4.h5'
+  #  val_path: '/Data2/DataSet/HISR/CAVE/validation_cave(with_up)x4.h5'
+  # train_path: '/Data2/ZiHanCao/datasets/pansharpening/wv3/training_wv3/train_wv3.h5'
+  # val_path: '/Data2/ZiHanCao/datasets/pansharpening/wv3/training_wv3//valid_wv3.h5'
+  train_path: "/Data2/ZiHanCao/datasets/pansharpening/gf/training_gf2/train_gf2.h5"
+  val_path: "/Data2/ZiHanCao/datasets/pansharpening/gf/training_gf2/valid_gf2.h5"
 #  train_path: '/home/ZiHanCao/datasets/pansharpening/qb/training_qb/train_qb.h5'
 #  val_path: '/home/ZiHanCao/datasets/pansharpening/qb/training_qb/valid_qb.h5'
 #  train_path: '/home/ZiHanCao/datasets/HISI/new_cave/train_cave(with_up)x4.h5'
 #  val_path: '/home/ZiHanCao/datasets/HISI/new_cave/validation_cave(with_up)x4.h5'
 #  train_path: '/home/ZiHanCao/datasets/HISI/new_harvard/train_harvard(with_up)x4_rgb.h5'
 #  val_path: '/home/ZiHanCao/datasets/HISI/new_harvard/validation_harvard(with_up)x4_rgb.h5'
-
-# train_path: '/media/office-401-remote/Elements SE/cao/ZiHanCao/datasets/pansharpening/wv3/reduced_examples/test_wv3_multiExm1.h5'
-  # val_path: '/media/office-401-remote/Elements SE/cao/ZiHanCao/datasets/pansharpening/wv3/reduced_examples/test_wv3_multiExm1.h5'
-  # train_path: '/media/office-401-remote/Elements SE/cao/ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5'
-  # val_path: '/media/office-401-remote/Elements SE/cao/ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5'
-  train_path: '/media/office-401-remote/Elements SE/cao/ZiHanCao/datasets/pansharpening/qb/reduced_examples/test_qb_multiExm1.h5'
-  val_path: '/media/office-401-remote/Elements SE/cao/ZiHanCao/datasets/pansharpening/qb/reduced_examples/test_qb_multiExm1.h5'
 
 network_configs:
   base_filter: null
@@ -39,6 +32,6 @@ network_configs:
   stage: 3
 
 logger_config:
-    base_path: ./log_file/
-    name: mmnet
-    file_mode: w
+  base_path: ./log_file/
+  name: mmnet
+  file_mode: w

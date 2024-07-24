@@ -814,8 +814,8 @@ class MultiScaleWindowCrossAttention(nn.Module):
         #     # this 'if' will cause self.window_size1(2) not update
         #     self.window_size1 = self.window_dict[tgt.size(-1)]
         #     self.window_size2 = self.window_dict[mem.size(-1)]
-        self.window_size1 = self.window_dict[tgt.size(-1)]
-        self.window_size2 = self.window_dict[mem.size(-1)]
+        self.window_size1 = self.window_dict[int(tgt.size(-1))]
+        self.window_size2 = self.window_dict[int(mem.size(-1))]
 
         
         b, c, h, w = tgt.shape

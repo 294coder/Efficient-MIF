@@ -1,34 +1,39 @@
 optimizer:
-  name: 'adam'
-  lr: !!float 5e-4
+  name: "adam"
+  lr: !!float 1e-3
   weight_decay: !!float 1e-6
 
 lr_scheduler:
-  name: 'multi_step'
-  milestones: [400, 600]
+  name: "multi_step"
+  milestones: [400, 800]
   gamma: 0.1
 
 max_norm: 0.01
 
 path:
-#  train_path: '/Data2/DataSet/HISR/CAVE/train_cave(with_up)x4.h5'
-#  val_path: '/Data2/DataSet/HISR/CAVE/validation_cave(with_up)x4.h5'
-#  train_path: '/home/ZiHanCao/datasets/pansharpening/wv3/training_wv3/train_wv3.h5'
-#  val_path: '/home/ZiHanCao/datasets/pansharpening/wv3/training_wv3//valid_wv3.h5'
-#  train_path: '/home/ZiHanCao/datasets/pansharpening/gf/training_gf2/train_gf2.h5'
-#  val_path: '/home/ZiHanCao/datasets/pansharpening/gf/training_gf2/valid_gf2.h5'
-  train_path: '/home/ZiHanCao/datasets/pansharpening/qb/training_qb/train_qb.h5'
-  val_path: '/home/ZiHanCao/datasets/pansharpening/qb/training_qb/valid_qb.h5'
+  #  train_path: '/Data2/DataSet/HISR/CAVE/train_cave(with_up)x4.h5'
+  #  val_path: '/Data2/DataSet/HISR/CAVE/validation_cave(with_up)x4.h5'
+  #  train_path: '/home/ZiHanCao/datasets/pansharpening/wv3/training_wv3/train_wv3.h5'
+  #  val_path: '/home/ZiHanCao/datasets/pansharpening/wv3/training_wv3//valid_wv3.h5'
+  #  train_path: '/home/ZiHanCao/datasets/pansharpening/gf/training_gf2/train_gf2.h5'
+  #  val_path: '/home/ZiHanCao/datasets/pansharpening/gf/training_gf2/valid_gf2.h5'
+  # train_path: '/home/ZiHanCao/datasets/pansharpening/qb/training_qb/train_qb.h5'
+  # val_path: '/home/ZiHanCao/datasets/pansharpening/qb/training_qb/valid_qb.h5'
+  train_path: "/Data2/ZiHanCao/datasets/pansharpening/GF5_GF1/train_GF5_GF1.h5"
+  val_path: "/Data2/ZiHanCao/datasets/pansharpening/GF5_GF1/test_GF5_GF1.h5"
+
 #  train_path: '/home/ZiHanCao/datasets/HISI/new_cave/train_cave(with_up)x4.h5'
 #  val_path: '/home/ZiHanCao/datasets/HISI/new_cave/validation_cave(with_up)x4.h5'
 #  train_path: '/home/ZiHanCao/datasets/HISI/new_harvard/train_harvard(with_up)x4_rgb.h5'
 #  val_path: '/home/ZiHanCao/datasets/HISI/new_harvard/validation_harvard(with_up)x4_rgb.h5'
 
 network_configs:
-  in_c: 4
-  hidden_c: 32
+  in_c: 150
+  hidden_c: 64 # 32
+  pan_c: 4
+  factor: 2
 
 logger_config:
-    base_path: ./log_file/
-    name: pannet_qb
-    file_mode: w
+  base_path: ./log_file/
+  name: pannet_gf5
+  file_mode: w

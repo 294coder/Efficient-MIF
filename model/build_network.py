@@ -2,11 +2,6 @@ from model.base_model import MODELS
 import importlib
 
 
-def build_network(full_arch, **kwargs):
-    net = MODELS.get(full_arch)
-    assert net is not None, f'no model named {full_arch} is registered'
-    # import networks
-    return net(**kwargs)
 
     # if name == 'pannet':
     #     return net(**kwargs)

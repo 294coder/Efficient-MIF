@@ -1,0 +1,19 @@
+compute_environment: LOCAL_MACHINE
+deepspeed_config:
+  deepspeed_config_file: configs/huggingface/deepspeed_ZERO2_bf16_config.json
+  # zero3_init_flag: false
+  # gradient_accumulation_steps: 2
+#   gradient_clipping: 1.0
+#   offload_optimizer_device: none
+#   offload_param_device: none
+#   zero_stage: 0
+distributed_type: NO # DEEPSPEED # MULTI_GPU
+fsdp_config: {}
+machine_rank: null
+main_process_ip: null
+main_process_port: null
+main_training_function: main
+# mixed_precision: bf16 # fp16 
+num_machines: 1
+num_processes: 1
+use_cpu: false

@@ -8,10 +8,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+import sys
+sys.path.append('./')
 from model.base_model import BaseModel, register_model, PatchMergeModule
 
 BN_MOMENTUM = 0.01
-PLANES = 31
+PLANES = 8
 
 
 def conv3x3(in_planes, out_planes, stride=1):
@@ -396,7 +398,7 @@ class DCFNet(BaseModel):
             init_channel = spectral_num
         elif mode == "C":
             print("concat head")
-            init_channel = spectral_num + 3
+            init_channel = spectral_num + 1
         else:
             assert False, print("fisrt_fuse error")
         self.blocks_list = [4, [4, 4], [4, 4, 4]]
@@ -702,15 +704,33 @@ class DCFNet(BaseModel):
 
 
 if __name__ == '__main__':
-    ms = torch.randn(1, 31, 16, 16)
-    mms = torch.randn(1, 31, 32, 32)
-    lms = torch.randn(1, 31, 64, 64)
-    pan = torch.randn(1, 3, 64, 64)
+    device='cuda:0'
+    ms = torch.randn(1, 8, 64, 64).to(device)
+    mms = torch.randn(1, 8, 128, 128).to(device)
+    lms = torch.randn(1, 8, 256, 256).to(device)
+    pan = torch.randn(1, 1, 256, 256).to(device)
+    
+    import contextlib
+    import time
+    
+    @contextlib.contextmanager
+    def time_it(t=10):
+        t1 = time.time()
+        yield
+        t2 = time.time()
+        print('time: {:.3f}s'.format((t2 - t1)/t))
+        
 
     # params: 2.915M
     # FLOPs: 3.489G
-    net = DCFNet(31, mode='C', patch_merge=True, patch_size_list=[16, 32, 64, 64], scale=4)
+    net = DCFNet(8, mode='C', patch_merge=True, patch_size_list=[16, 32, 64, 64], scale=4).to(device)
     print(net.val_step(ms, lms, pan).shape)
+    
+    tt = 10
+    with time_it(tt):
+        for _ in range(tt):
+            y = net.val_step(ms, lms, pan)
 
-    # net.forward = net._forward_implem
-    # print(flop_count_table(FlopCountAnalysis(net, (pan, lms, mms, ms))))
+    net.forward = net._forward_implem
+    from fvcore.nn import FlopCountAnalysis, flop_count_table
+    print(flop_count_table(FlopCountAnalysis(net, (pan, lms, mms, ms))))

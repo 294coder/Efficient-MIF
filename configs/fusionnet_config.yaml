@@ -1,22 +1,32 @@
 optimizer:
-  name: 'adam'
-  lr: !!float 5e-4
+  name: "adamw"
+  lr: !!float 1e-3
   weight_decay: !!float 1e-6
 
 lr_scheduler:
-#  name: 'multi_step'
-#  milestones: [100, 250, 400, 600, 800]
-#  gamma: 0.5
-  name: 'cos_anneal'
-  T_max: 1500
-  eta_min: !!float 1e-6
+  name: "multi_step"
+  milestones: [400, 1600]
+  gamma: 1
 
 max_norm: 0.01
 
 path:
-  train_path: '/Data2/DataSet/pansharpening/training_data/train_wv3.h5'
-  val_path: '/Data2/DataSet/pansharpening/training_data/valid_wv3.h5'
+  #   train_path: "/Data2/ZiHanCao/datasets/pansharpening/GF5_GF1/train_GF5_GF1.h5"
+  #   val_path: "/Data2/Datasets/GF5_GF1/test_GF5_GF1-new.h5"
+  train_path: "/Data2/ZiHanCao/datasets/pansharpening/wv3/training_wv3/train_wv3.h5"
+  val_path: "/Data2/ZiHanCao/datasets/pansharpening/wv3/reduced_examples/test_wv3_multiExm1.h5"
+  # train_path: "/Data2/ZiHanCao/datasets/pansharpening/gf/training_gf2/train_gf2.h5"
+  # val_path: "/Data2/ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5"
+  # train_path: "/Data2/ZiHanCao/datasets/pansharpening/qb/training_qb/train_qb.h5"
+  # train_path: "/Data2/ZiHanCao/datasets/pansharpening/qb/reduced_examples/test_qb_multiExm1.h5"
+  # val_path: "/Data2/ZiHanCao/datasets/pansharpening/qb/reduced_examples/test_qb_multiExm1.h5"
+#   train_path: "/Data2/ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5"
+#   val_path: "/Data2/ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5"
 
 network_configs:
   spectral_num: 8
-  channel: 32
+
+logger_config:
+  base_path: ./log_file/
+  name: fusionnet
+  file_mode: w

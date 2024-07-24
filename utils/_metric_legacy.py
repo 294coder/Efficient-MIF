@@ -343,7 +343,7 @@ def analysis_accu(img_base, img_out, ratio, flag_cut_bounds=True, dim_cut=1, cho
     mse = torch.mean(mse, 0)
     rmse = mse ** 0.5
     temp = torch.log(1 / rmse) / math.log(10)
-    PSNR = -20 * temp
+    PSNR = 20 * temp
 
     # 计算SSIM
     # img_base = img_base.permute(2, 0, 1)
@@ -458,6 +458,18 @@ def compare_index(A):
     C_best = A[:, :, ind]
     best_ind = ind + 1
     return C_best, best_ind
+
+
+########################################
+# Non-reference quality assessment
+# D_\lambda, D_s, HQNR implementaion
+# Author: Xiao Wu, Zihan Cao
+# Date: 2024/02/04
+########################################
+
+from .FS_index.hqnr2 import indexes_evaluation_FS
+
+
 
 
 if __name__ == "__main__":

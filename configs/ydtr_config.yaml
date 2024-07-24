@@ -21,7 +21,7 @@ path:
 #  train_path: '/home/ZiHanCao/datasets/pansharpening/gf/training_gf2/train_gf2.h5'
 #  val_path: '/home/ZiHanCao/datasets/pansharpening/gf/training_gf2/valid_gf2.h5'
 
-    base_dir: "/media/office-401/Elements SE/cao/ZiHanCao/datasets/RoadScene_and_TNO/"
+    base_dir: "/Data2/ZiHanCao/datasets/RoadScene_and_TNO/"
 
 network_configs:
   in_channel: 1

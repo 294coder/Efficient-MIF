@@ -1,0 +1,32 @@
+optimizer:
+  name: "adamw"
+  lr: !!float 2e-4
+  weight_decay: !!float 1e-6
+
+lr_scheduler:
+  name: "multi_step"
+  milestones: [400, 800, 1600]
+  gamma: 0.4
+
+max_norm: 0.01
+
+path:
+  #  train_path: '/Data2/DataSet/HISR/CAVE/train_cave(with_up)x4.h5'
+  #  val_path: '/Data2/DataSet/HISR/CAVE/validation_cave(with_up)x4.h5'
+  train_path: "/Data2/ZiHanCao/datasets/pansharpening/GF5_GF1/train_GF5_GF1.h5"
+  val_path: "/Data2/Datasets/GF5_GF1/test_GF5_GF1-new.h5"
+
+#  train_path: '/home/ZiHanCao/datasets/HISI/new_cave/train_cave(with_up)x4.h5'
+#  val_path: '/home/ZiHanCao/datasets/HISI/new_cave/validation_cave(with_up)x4.h5'
+#  train_path: '/home/ZiHanCao/datasets/HISI/new_harvard/train_harvard(with_up)x4_rgb.h5'
+#  val_path: '/home/ZiHanCao/datasets/HISI/new_harvard/validation_harvard(with_up)x4_rgb.h5'
+
+network_configs:
+  is_bn: yes
+  n_select_bands: 4
+  n_bands: 150
+
+logger_config:
+  base_path: ./log_file/
+  name: restfnet_gf5
+  file_mode: w

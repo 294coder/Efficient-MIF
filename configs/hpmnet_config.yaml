@@ -1,0 +1,41 @@
+optimizer:
+  name: "adamw"
+  lr: !!float 1e-4
+  weight_decay: !!float 1e-6
+
+lr_scheduler:
+  name: "multi_step"
+  milestones: [1000, 1600]
+  gamma: 1
+
+max_norm: 0.01
+
+path:
+  #   train_path: "/Data2/ZiHanCao/datasets/pansharpening/GF5_GF1/train_GF5_GF1.h5"
+  #   val_path: "/Data2/Datasets/GF5_GF1/test_GF5_GF1-new.h5"
+  # train_path: "/Data2/ZiHanCao/datasets/pansharpening/wv3/training_wv3/train_wv3.h5"
+  # val_path: "/Data2/ZiHanCao/datasets/pansharpening/wv3/reduced_examples/test_wv3_multiExm1.h5"
+  # train_path: "/Data2/ZiHanCao/datasets/pansharpening/gf/training_gf2/train_gf2.h5"
+  # val_path: "/Data2/ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5"
+  # train_path: "/Data2/ZiHanCao/datasets/pansharpening/qb/training_qb/train_qb.h5"
+  # train_path: "/Data2/ZiHanCao/datasets/pansharpening/qb/reduced_examples/test_qb_multiExm1.h5"
+  # val_path: "/Data2/ZiHanCao/datasets/pansharpening/qb/reduced_examples/test_qb_multiExm1.h5"
+  train_path: "/Data2/ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5"
+  val_path: "/Data2/ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5"
+
+network_configs:
+  n_iter: 6
+  h_nc: 64
+  in_c: 9
+  out_c: 8
+  m_c: 3
+  nc: [80, 160, 320]
+  nb: 1
+  act_mode: "R"
+  downsample_mode: "strideconv"
+  upsample_mode: "convtranspose"
+
+logger_config:
+  base_path: ./log_file/
+  name: hpmnet_gf2
+  file_mode: w
