@@ -19,7 +19,7 @@ Mamba, as a state space model, has emerged in the field of natural language proc
 <html>
 <body>
     <div class="image-container" style="text-align: center;">
-        <img src="figs/le-mamba.png" alt="Image 1" width="100%">
+        <img src="figs/le-mamba-teaser.png" alt="Image 1" width="100%">
     </div>
 </body>
 </html>
@@ -79,3 +79,17 @@ analysis_ref_batched_images(path, ratio, full_res, const)
 % sensor: the sensor name
 analysis_unref_batched_images(path, ratio, sensor)
 ```
+
+# Performances
+LE-Mamba reaches SOTA performances on widely-used Pansharpening and HMIF datasets. Here are some metrics:
+
+<html>
+<body>
+    <div class="image-container" style="text-align: center;">
+        <img src="figs/le-mamba-pansharpening.png" alt="Image 1" width="100%">
+    </div>
+     <div class="image-container" style="text-align: center;">
+        <img src="figs/le-mamba-HMIF.png" alt="Image 1" width="100%">
+    </div>
+</body>
+</html
