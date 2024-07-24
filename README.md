@@ -30,7 +30,7 @@ This framework is tested on Python 3.9.x / 3.11 and Pytorch 2.3.0 with CUDA 11.8
 
 
 # NEWS✨
-2024.07.24: Some downstream tasks: a) detection task; b) segmentation task, c) DepthAnythining v2 are ready to realse.
+2024.07.24: Some downstream tasks: a) detection task; b) segmentation task, c) depth estimation are ready to release.
 
 2024.06.27: We release VIS-IR and medical image fusion training scripts. 
 
@@ -154,7 +154,12 @@ In this repo, we introduce two SOTA downstream models to test the fusion models:
 
 # Model Cards
 
-You can find our detailed descriptions of the proposed fusion models at `readmes/`. For exmaple: [*LE-Mamba*](readmes/le-mamba.md).
+You can find our detailed descriptions of the proposed fusion models at `readmes/`. 
+
+| Models   | Tasks                | Guidance   |
+| :------: | :------------------: | :--------: |
+| [LE-Mamba (ACM MM 24)](https://arxiv.org/abs/2404.09293) | Pansharpening; HMIF. | [ReadMe](readmes/le-mamba.md) |
+
 
 
 # About Dataset
