@@ -1,0 +1,82 @@
+optimizer:
+  name: "adamw"
+  lr: !!float 1e-4
+  weight_decay: !!float 1e-6
+
+lr_scheduler:
+  #  name: 'cos_anneal'
+  #  name: 'cos_anneal_restart'
+  #  T_0: 50
+  #  T_mult: 2
+  #  eta_min: !!float 1e-9
+  #  T_max: 2000
+  #  eta_min: !!float 1e-8
+
+  # name: "plateau"
+  # mode: "min"
+  # threshold: !!float 1e-5 # l1
+  # min_lr: !!float 1e-6
+  # patience: 20
+  # factor: !!float 0.1
+  # cooldown: 5
+  # threshold_mode: "rel"
+
+  name: 'identity'
+
+  # name: "multi_step"
+  # milestones: [1000] #[100, 800]
+  # gamma: 0.2
+
+max_norm: 0.03
+ema_decay: 0.999
+
+path:
+  # pansharpening
+  wv3_train_path: "/Data2/ZiHanCao/datasets/pansharpening/wv3/training_wv3/train_wv3.h5"
+  wv3_val_path: "/Data2/ZiHanCao/datasets/pansharpening/wv3/reduced_examples/test_wv3_multiExm1.h5"
+
+  gf2_train_path: "/Data2/ZiHanCao/datasets/pansharpening/gf/training_gf2/train_gf2.h5"
+  gf2_val_path: "/Data2/ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5"
+
+  qb_train_path: "/Data2/ZiHanCao/datasets/pansharpening/qb/training_qb/train_qb.h5"
+  qb_val_path: "/Data2/ZiHanCao/datasets/pansharpening/qb/reduced_examples/test_qb_multiExm1.h5"
+
+  # hyperspectral multispectral image fusion
+  cave_x4_train_path: "/volsparse1/dataset/HISR/cave_x8/train_cave(with_up)x8_rgb_16.h5"
+  #   val_path: "/home/ShangqiDeng/data/HSI/cave_x4/test_cavepatches64-2.h5"
+  cave_x4_val_path: "/Data2/ZiHanCao/datasets/HISI/new_cave/test_cave(with_up)x4.h5"
+
+  cave_x8_train_path: "/Data2/ZiHanCao/datasets/HISI/new_cave/x8/train_cave(with_up)x8_rgb_16.h5"
+  #  val_path: "/home/ZiHanCao/datasets/HISI/new_cave/x8/validation_cave(with_up)x8_rgb.h5"
+  cave_x8_val_path: "/Data2/ZiHanCao/datasets/HISI/new_cave/x8/test_cave(with_up)x8_rgb.h5"
+
+  harvard_x4_train_path: "/Data2/ZiHanCao/datasets/HISI/new_harvard/train_harvard(with_up)x4_rgb.h5"
+  harvard_x4_val_path: "/Data2/ZiHanCao/datasets/HISI/new_harvard/test_harvard(with_up)x4_rgb.h5"
+
+  harvard_x8_train_path: "/volsparse1/dataset/HISR/harvard_x8/train_harvard(with_up)x8_rgb.h5"
+  harvard_x8_val_path: "/volsparse1/dataset/HISR/harvard_x8/test_harvard(with_up)x8_rgb.h5"
+
+
+network_configs:
+  in_chan: 8
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+logger_config:
+  base_path: ./log_file/
+  name: MIM_SST
+  file_mode: w
+
+
+

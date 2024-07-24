@@ -1,18 +1,31 @@
-from calendar import c
-from typing import Union
+from functools import partial
+import random
+from typing import Sequence, Union
+from einops import reduce
+from contextlib import contextmanager
+import kornia
+from kornia.filters import spatial_gradient
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 from torch.autograd import Variable
-import torchvision.transforms.functional as TF
 import numpy as np
 from math import exp
 import lpips
+from deepinv.loss import TVLoss
 
+import sys
+
+sys.path.append('./')
+from model.base_model import BaseModel
+from utils.misc import is_main_process, exists, default, rgb_to_ycbcr, ycbcr_to_rgb
 from utils.torch_dct import dct_2d, idct_2d
-from utils._vgg import vgg16
+from utils.vgg import vgg16
 from utils._ydtr_loss import ssim_loss_ir, ssim_loss_vi, sf_loss_ir, sf_loss_vi
+from utils.log_utils import easy_logger
+
+logger = easy_logger()
 
 
 class PerceptualLoss(nn.Module):
@@ -248,7 +261,7 @@ def ave_ep_loss(ep_loss_dict: dict, ep_iters: int):
         ep_loss_dict[k] = v / ep_iters
     return ep_loss_dict
 
-
+@is_main_process  
 def ave_multi_rank_dict(rank_loss_dict: list[dict]):
     ave_dict = {}
     n = len(rank_loss_dict)
@@ -262,7 +275,6 @@ def ave_multi_rank_dict(rank_loss_dict: list[dict]):
             vs = vs + v
         ave_dict[k] = vs / n
     return ave_dict
-
 
 class HybridL1SSIM(torch.nn.Module):
     def __init__(self, channel=31, weighted_r=(1.0, 0.1)):
@@ -635,9 +647,24 @@ class HybridPIALoss(nn.Module):
         return l1_int + l1_aux + l1_grad + percep_loss, loss_d
 
 
+def parse_fusion_gt(gt: "Tensor | tuple[Tensor] | list[Tensor]"):
+    # TODO: consider the vis is RGB
+    if isinstance(gt, Tensor):
+        if gt.size(1) == 4:
+            ir, vi = gt[:, 3:], gt[:, :3]
+        elif gt.size(1) == 2:
+            ir, vi = gt[:, 1:], gt[:, 0:1]
+    elif isinstance(gt, (tuple, list)):
+        ir, vi = gt[1], gt[0]
+    else:
+        raise ValueError('gt must be a tensor or a tuple or a list')
+    
+    return ir, vi
+
 # U2Fusion dynamic loss weight
 class U2FusionLoss(nn.Module):
-    def __init__(self, loss_weights: tuple[float] = (5, 2, 10)) -> None:
+    def __init__(self, 
+                 loss_weights: tuple[float, float, float] = (5., 2., 10.)) -> None:
         # loss_weights:
         super().__init__()
         # modified from https://github.com/ytZhang99/U2Fusion-pytorch/blob/master/train.py
@@ -654,21 +681,24 @@ class U2FusionLoss(nn.Module):
         #   , size_average=False)
         self.mse_loss = nn.MSELoss(reduction="none")
 
-    def forward(self, fuse, gt):
+    def forward(self, fuse, gt, *, mask=None):
+        
         # similiar to PIAFusion paper, which introduces a classifier
         # to judge the day or night image and give the probability
-        ws = self.dynamic_weight(gt)
+        ir, vi = parse_fusion_gt(gt)
+        ir, vi = self.repeat_dims(ir), self.repeat_dims(vi)
+        
+        ws = self.dynamic_weight(ir, vi)
         ir_w, vi_w = ws.chunk(2, dim=-1)
         ir_w, vi_w = ir_w.flatten(), vi_w.flatten()
 
         # here we do not follow U2Fusion paper and change it into other losses
         l1_int = (
-            vi_w * self.mse_loss(fuse, gt[:, 0:1]).mean((1, 2, 3))
-            + ir_w * self.mse_loss(fuse, gt[:, 1:]).mean((1, 2, 3))
+            vi_w * self.mse_loss(fuse, vi).mean((1, 2, 3))
+            + ir_w * self.mse_loss(fuse, ir).mean((1, 2, 3))
         ).mean() * self.loss_weights[0]
 
-        # 哪里亮点哪里
-        l1_aux = F.mse_loss(fuse, gt.max(1, keepdim=True)[0]) * self.loss_weights[1]
+        l1_aux = F.mse_loss(fuse, torch.max(ir, vi)) * self.loss_weights[1]
 
         # gradient part. choose the largest gradient
         # l1_grad = (
@@ -693,7 +723,7 @@ class U2FusionLoss(nn.Module):
         #     + vi_w * self.ssim_loss(fuse, gt[:, 0:1])
         # ).mean() * self.loss_weights[2]
         loss_ssim = (
-            self.ssim_loss(fuse, gt[:, 0:1]) + self.ssim_loss(fuse, gt[:, 1:])
+            self.ssim_loss(fuse, ir) + self.ssim_loss(fuse, vi)
         ) * self.loss_weights[2]
 
         loss_d = dict(intensity_loss=l1_int, aux_loss=l1_aux, ssim_loss=loss_ssim)
@@ -702,8 +732,7 @@ class U2FusionLoss(nn.Module):
         return l1_int + l1_aux + loss_ssim, loss_d
 
     @torch.no_grad()
-    def dynamic_weight(self, gt):
-        ir_vgg, vi_vgg = self.repeat_dims(gt[:, 1:]), self.repeat_dims(gt[:, 0:1])
+    def dynamic_weight(self, ir_vgg, vi_vgg):
 
         ir_f = self.feature_model(ir_vgg)
         vi_f = self.feature_model(vi_vgg)
@@ -726,8 +755,8 @@ class U2FusionLoss(nn.Module):
         w1 = torch.stack(m1s, dim=-1)
         w2 = torch.stack(m2s, dim=-1)
 
-        weight_1 = torch.mean(w1, dim=-1) / self.c
-        weight_2 = torch.mean(w2, dim=-1) / self.c
+        weight_1 = (torch.mean(w1, dim=-1) / self.c).detach()
+        weight_2 = (torch.mean(w2, dim=-1) / self.c).detach()
 
         # print(weight_1.tolist()[:6], weight_2.tolist()[:6])
 
@@ -762,8 +791,11 @@ class U2FusionLoss(nn.Module):
         return feat_grads
 
     def repeat_dims(self, x):
-        assert x.size(1) == 1, "the number of channel of x must be 1"
-        return x.repeat(1, 3, 1, 1)
+        assert x.size(1) in [1, 3], "the number of channel of x must be 3"
+        if x.size(1) == 1:
+            return x.repeat(1, 3, 1, 1)
+        else:
+            return x
 
 
 # DCT Blur Loss
@@ -978,7 +1010,591 @@ class CDDFusionLoss(nn.Module):
         return l1_loss + dct_loss + mcg_loss, loss_d
 
 
-def get_loss(loss_type, channel=31):
+
+### psfusion loss
+
+class CorrelationLoss(nn.Module):
+    """
+    global normalized cross correlation (sqrt)
+    """
+    def __init__(self, eps=1e-6):
+        super(CorrelationLoss, self).__init__()
+        self.eps = eps
+
+    def corr2(self, img1, img2):
+        img1 = img1 - img1.mean()
+        img2 = img2 - img2.mean()
+        r = torch.sum(img1*img2)/torch.sqrt(torch.sum(img1*img1)*torch.sum(img2*img2))
+        return r
+
+    def forward(self, image_ir, img_vis, img_fusion):
+        cc = self.corr2(image_ir, img_fusion) + self.corr2(img_vis, img_fusion)
+        
+        return 1. / (cc + self.eps)
+
+
+### DRMF loss ###
+
+def RGB2YCrCb(rgb_image):
+    """
+    Convert RGB format to YCrCb format.
+    Used in the intermediate results of the color space conversion, because the default size of rgb_image is [B, C, H, W].
+    :param rgb_image: image data in RGB format
+    :return: Y, Cr, Cb
+    """
+
+    R = rgb_image[:, 0:1]
+    G = rgb_image[:, 1:2]
+    B = rgb_image[:, 2:3]
+    Y = 0.299 * R + 0.587 * G + 0.114 * B
+    Cr = (R - Y) * 0.713 + 0.5
+    Cb = (B - Y) * 0.564 + 0.5
+
+    Y = Y.clamp(0.0,1.0)
+    Cr = Cr.clamp(0.0,1.0)#.detach()
+    Cb = Cb.clamp(0.0,1.0)#.detach()
+    return Y, Cb, Cr
+
+def YCbCr2RGB(Y, Cb, Cr):
+    """
+    Convert YcrCb format to RGB format
+    :param Y.
+    :param Cb.
+    :param Cr.
+    :return.
+    """
+    ycrcb = torch.cat([Y, Cr, Cb], dim=1)
+    B, C, W, H = ycrcb.shape
+    im_flat = ycrcb.transpose(1, 3).transpose(1, 2).reshape(-1, 3)
+    mat = torch.tensor([[1.0, 1.0, 1.0], [1.403, -0.714, 0.0], [0.0, -0.344, 1.773]]
+    ).to(Y.device)
+    bias = torch.tensor([0.0 / 255, -0.5, -0.5]).to(Y.device)
+    temp = (im_flat + bias).mm(mat)
+    out = temp.reshape(B, W, H, C).transpose(1, 3).transpose(2, 3)
+    out = out.clamp(0,1.0)
+    return out
+
+
+class SobelOp(nn.Module):
+    def __init__(self):
+        super(SobelOp, self).__init__()
+        kernelx = [[-1, 0, 1],
+                  [-2, 0, 2],
+                  [-1, 0, 1]]
+        kernely = [[1, 2, 1],
+                  [0, 0, 0],
+                  [-1, -2, -1]]
+        kernelx = torch.FloatTensor(kernelx).unsqueeze(0).unsqueeze(0)
+        kernely = torch.FloatTensor(kernely).unsqueeze(0).unsqueeze(0)
+        self.register_buffer('weightx', kernelx)
+        self.register_buffer('weighty', kernely)
+        
+    def forward(self,x):
+        sobelx=F.conv2d(x, self.weightx, padding=1)
+        sobely=F.conv2d(x, self.weighty, padding=1)
+        
+        # sobel_xy = torch.abs(sobelx)+torch.abs(sobely)
+        
+        sobel_xy = torch.max(
+            torch.abs(sobelx), torch.abs(sobely)
+        )
+        
+        return sobel_xy
+        
+
+class DRMFFusionLoss(nn.Module):
+    def __init__(self, 
+                 latent_weighted: bool=False, 
+                 *,
+                 grad_loss: bool=True,
+                 ssim_loss: bool=True,
+                 tv_loss: bool=False, 
+                 pseudo_l1_const=1.4e-3,
+                 correlation_loss: bool=False,
+                 reduce_label: bool=True,
+                 color_loss_bg_masked: bool=False,
+                 weight_dict: dict=None):
+        super(DRMFFusionLoss, self).__init__()
+        self.latent_weighted = latent_weighted
+        self.ssim = ssim_loss
+        self.grad = grad_loss        
+        self.tv = tv_loss
+        self.correlation = correlation_loss
+        self.reduce_label = reduce_label
+        self.color_loss_bg_masked = color_loss_bg_masked
+        logger.info(f'{__class__.__name__}: color loss performs [green]{"only on background" if color_loss_bg_masked else "on the whole image"}[/green]')
+        
+        self.loss_func = nn.L1Loss(reduction='none') if pseudo_l1_const == 0 else \
+                         partial(self.pseudo_l2_loss, c=pseudo_l1_const)
+        main_loss = 'l1 loss' if pseudo_l1_const == 0 else 'pseudo l2 loss'
+        
+        if grad_loss:
+            self.sobelconv = SobelOp()
+        if ssim_loss:
+            self.ssim_func = SSIMLoss()
+        if tv_loss:
+            self.tv_loss = TVLoss(weight=2.0)
+        if correlation_loss:
+            self.cc_loss = CorrelationLoss()
+        
+        if latent_weighted:
+            logger.info('using vgg16 to extract latent features')
+            self.latent_model = vgg16(pretrained=True).eval()
+            self.latent_temp = 0.1
+            feature_grad_kernel = torch.tensor([[1 / 8, 1 / 8, 1 / 8], 
+                                                [1 / 8, -1, 1 / 8], 
+                                                [1 / 8, 1 / 8, 1 / 8]]).type(torch.float32)
+            self.register_buffer('kernel', feature_grad_kernel)
+
+        self.weight_dict = default(weight_dict, {
+                                                    'fusion_gt': 1,
+                                                    'inten_f_joint': 2,
+                                                    'inten_f_ir': 4,
+                                                    'inten_f_vi': 2,
+                                                    'color_f_cb': 2,
+                                                    'color_f_cr': 2,
+                                                    'grad_f_joint': 4,
+                                                    'ssim_f_joint': 0.6,
+                                                    'tv_f': 0.1,
+                                                    'crr_f': 0.02,
+                                                })
+        
+        logger.info(f'Latent weighted: {latent_weighted}, TV loss: {tv_loss}, grad loss: {grad_loss}, SSIM loss: {ssim_loss}, correlation loss: {correlation_loss}')
+        logger.info(f'main loss: {main_loss}')
+    
+    @staticmethod
+    def pseudo_l2_loss(img1, img2, c):
+        return torch.sqrt((img1 - img2) ** 2 + c ** 2) - c
+        
+    def check_rgb(self, img):
+        if img.size(1) != 3:
+            assert img.size(1) == 1, 'The channel of the image should be 1 or 3.'
+            img = img.repeat(1, 3, 1, 1)
+            
+        return img.detach()
+    
+    @torch.no_grad()
+    def dynamic_weight(self, ir, vi):
+        def features_grad(features):
+            kernel = self.kernel.expand(features.shape[1], 1, 3, 3)
+            feat_grads = F.conv2d(features, kernel, stride=1, padding=1, groups=features.shape[1])
+            return feat_grads
+
+        ir_f = self.latent_model(ir)
+        vi_f = self.latent_model(vi)
+
+        m1s = []
+        m2s = []
+        for i in range(len(ir_f)):
+            m1 = torch.mean(features_grad(ir_f[i]).pow(2), dim=[1, 2, 3])
+            m2 = torch.mean(features_grad(vi_f[i]).pow(2), dim=[1, 2, 3])
+
+            m1s.append(m1)
+            m2s.append(m2)
+
+        w1 = torch.stack(m1s, dim=-1)
+        w2 = torch.stack(m2s, dim=-1)
+
+        weight_1 = torch.mean(w1, dim=-1) / self.latent_temp
+        weight_2 = torch.mean(w2, dim=-1) / self.latent_temp
+
+        weight_list = torch.stack([weight_1, weight_2], dim=-1)
+        weight_list = F.softmax(weight_list, dim=-1)
+        ir_w, vi_w = weight_list.chunk(2, dim=-1)
+        ir_w, vi_w = ir_w.flatten(), vi_w.flatten()
+        
+        return vi_w, ir_w
+    
+    def check_dtype_and_device(self, *args: tuple[Tensor]):
+        dtype = None
+        device = None
+        
+        def _asserts(ti, dtype, device):
+            assert ti.dtype == dtype, f'The dtype of the input tensors should be the same, but got {ti.dtype} and {dtype}'
+            assert ti.device == device, f'The device of the input tensors should be the same, but got {ti.device} and {device}'
+        
+        for t in args:
+            if dtype is None:
+                dtype = t.dtype
+            if device is None:
+                device = t.device
+            
+            if isinstance(t, (tuple, list)):
+                for ti in t:
+                    _asserts(ti, dtype, device)
+            else:
+                _asserts(t, dtype, device)
+                
+    def forward(self,
+                img_fusion: Tensor,
+                boundary_gt: "Tensor | tuple",  # cat([vi, ir]) or tuple(vis, ir)
+                fusion_gt: "Tensor"=None,
+                mask: Tensor=None) -> tuple[torch.Tensor, dict]:
+        if mask is not None:
+            self.check_dtype_and_device(img_fusion, boundary_gt, mask)
+            with torch.no_grad():
+                if self.reduce_label:
+                    mask2 = mask
+                    mask[mask > 1.] = 1.
+                else:
+                    mask2 = mask
+        else:
+            self.check_dtype_and_device(img_fusion, boundary_gt)
+        
+        wd = self.weight_dict
+        loss_intensity = 0
+        loss_color = 0
+        loss_grad = 0
+        loss_fusion = 0
+        loss = {}
+        
+        # split boundary gt
+        no_batch_ndim = img_fusion.ndim - 1
+        broadcast_fn = lambda x: x.reshape(-1, *[1]*no_batch_ndim)
+        if isinstance(boundary_gt, tuple):
+            img_B, img_A = boundary_gt
+        else:
+            img_A, img_B = boundary_gt[:, 3:], boundary_gt[:, :3]
+            
+        # if has gt (e.g., when we train model on multi-exposure image fusion task)
+        if exists(fusion_gt):
+            loss_fusion += wd['fusion_gt'] * self.loss_func(img_fusion, fusion_gt)
+            
+        # ir, vi
+        img_A, img_B = self.check_rgb(img_A), self.check_rgb(img_B)
+        
+        # vgg latent weights
+        if self.latent_weighted:
+            vi_w, ir_w = self.dynamic_weight(img_A, img_B)
+            vi_w = broadcast_fn(vi_w)
+            ir_w = broadcast_fn(ir_w)
+        else:
+            vi_w, ir_w = 1.0, 1.0
+        
+        # YCbCr decomposition
+        # use for intensity, color, and gradient loss
+        Y_fusion, Cb_fusion, Cr_fusion = RGB2YCrCb(img_fusion)
+        Y_A, Cb_A, Cr_A = RGB2YCrCb(img_A)  # ir
+        Y_B, Cb_B, Cr_B = RGB2YCrCb(img_B)  # vi
+        Y_joint = torch.max(Y_A, Y_B)
+        
+        ## intensity and color loss
+        if mask is not None:
+            # intensity loss
+            # 1. || fusion - max(vi, ir) ||                     max fusion
+            # 2. || mask * fusion - mask * ir ||                ir loss (pedistrain)
+            # 3. || (1 - mask) * fusion - (1 - mask) * vi ||    vi loss (background)
+            loss_intensity = wd['inten_f_joint'] * self.loss_func(Y_fusion, Y_joint) + \
+                             wd['inten_f_ir'] * ir_w * self.loss_func(mask2 * Y_fusion, mask2 * Y_A) + \
+                             wd['inten_f_vi'] * vi_w * self.loss_func(Y_fusion * (1 - mask2), Y_B * (1 - mask2))
+            # color loss
+            # 1. || (1-mask) * fusion_Cb - (1-mask) * ir_Cb ||          ir_Cb loss
+            # 2. || (1-mask) * fusion_Cr - (1-mask) * ir_Cr ||          ir_Cr loss
+            if self.color_loss_bg_masked:
+                bg_mask = 1 - mask2
+            else:
+                bg_mask = torch.ones_like(mask2)
+            loss_color = wd['color_f_cb'] * vi_w * self.loss_func(Cb_fusion * (1 - mask2), Cb_B * (1 - mask2)) + \
+                         wd['color_f_cr'] * ir_w * self.loss_func(Cr_fusion * (1 - mask2), Cr_B * (1 - mask2))
+        else:
+            loss_intensity = wd['inten_f_joint'] * self.loss_func(Y_fusion, Y_joint) + \
+                             wd['inten_f_ir'] * ir_w * self.loss_func(Y_fusion, Y_A) + \
+                             wd['inten_f_vi'] * vi_w * self.loss_func(Y_fusion, Y_B)
+                             
+            # loss_intensity = 10 * ir_w * self.loss_func(Y_fusion, Y_A) + \
+            #                  10 * vi_w * self.loss_func(Y_fusion, Y_B)
+            loss_color = wd['color_f_cb'] * self.loss_func(Cb_fusion, Cb_B) + \
+                         wd['color_f_cr'] * self.loss_func(Cr_fusion, Cr_B)
+            
+        loss_intensity = loss_intensity.mean()
+        loss_color = loss_color.mean()
+        
+        loss_fusion += loss_intensity + loss_color
+        
+        ## grad loss
+        if self.grad:
+            grad_A = self.sobelconv(Y_A)
+            grad_B = self.sobelconv(Y_B)
+            grad_fusion = self.sobelconv(Y_fusion)
+
+            grad_joint = torch.max(grad_A, grad_B)
+            # if mask is not None:
+            #     loss_grad += 10 * self.loss_func(grad_fusion, grad_joint) + 40 * self.loss_func(mask * grad_fusion, mask * grad_A)
+            # else:
+            loss_grad += wd['grad_f_joint'] * self.loss_func(grad_fusion, grad_joint)
+            loss_grad = loss_grad.mean()
+            
+            loss_fusion += loss_grad
+            loss.update({'loss_grad': loss_grad})
+        
+        ## ssim loss
+        if self.ssim:
+            loss_ssim = wd['ssim_f_joint'] * (self.ssim_func(img_fusion, img_A) + self.ssim_func(img_fusion, img_B))
+            loss_fusion += loss_ssim
+            loss.update({'loss_ssim' : loss_ssim})
+        
+        ## tv loss
+        if self.tv:
+            tv_loss = wd['tv_f'] * self.tv_loss(img_fusion).mean()
+            loss_fusion += tv_loss
+            loss.update({'tv_loss': tv_loss})
+            
+        ## correlation loss
+        if self.correlation:
+            loss_corr = wd['crr_f'] * self.cc_loss(img_A, img_B, img_fusion)
+            loss_fusion += loss_corr
+            loss.update({'loss_corr': loss_corr})
+        
+            
+        loss.update({'loss_intensity' : loss_intensity,
+                     'loss_color' : loss_color,
+                     'loss_fusion' : loss_fusion})
+            
+        return loss_fusion, loss
+
+
+## EMMA stage two fusion training loss
+    
+class EMMAFusionLoss(nn.Module):
+    def __init__(self, 
+                 fusion_model: BaseModel,
+                 to_source_A_model: nn.Module,
+                 to_source_B_model: nn.Module,
+                 A_pretrain_path: str,
+                 B_pretrain_path: str,
+                 A_model_kwargs: dict,
+                 B_model_kwargs: dict,
+                 translation_kwargs: dict={},
+                 main_once_fusion_loss: Union[callable, nn.Module]=None,
+                 refusion_weight: float=0.1,
+                 detach_fused: bool=False,
+                 translation_weight: float=1.,
+                 model_pred_y: bool=True,
+                 ):
+        super().__init__()
+        device = next(fusion_model.parameters()).device
+        # device = 'cuda:1'
+        
+        self.fusion_model = fusion_model
+        
+        self.A_model = to_source_A_model(**A_model_kwargs).to(device)
+        self.A_model.load_state_dict(torch.load(A_pretrain_path))
+        self.A_model.eval()
+        logger.info(f'load A_model {self.A_model.__class__} done.')
+        
+        self.B_model = to_source_B_model(**B_model_kwargs).to(device)
+        self.B_model.load_state_dict(torch.load(B_pretrain_path))
+        self.B_model.eval()
+        logger.info(f'load B_model {self.B_model.__class__} done.')
+        
+        self.shift_n = translation_kwargs.get('shift_num', 3)
+        self.rotate_n = translation_kwargs.get('rotate_num', 3)
+        self.flip_n = translation_kwargs.get('flip_num', 3)
+        logger.info(f'translation params: {translation_kwargs}')
+        logger.warning(f'{__class__.__name__}: notice that your batch size will be enlarged by setting shift_n, ' + \
+                       f'rotate_n, flip_n, total [red]x{self.shift_n + self.rotate_n + self.flip_n} times[/red]')
+        
+        # apply some loss to first fusion image
+        self.main_once_fusion_loss = main_once_fusion_loss
+        
+        self.refusion_weight = refusion_weight
+        self.detach_fused = detach_fused
+        self.translation_weight = translation_weight
+        self.model_is_y_pred = model_pred_y
+        
+    def translation_loss(self, fused_img, s_A, s_B, mask=None):
+        # once fused image by outter training loop
+        # i.e., fusion_model(s_A, s_B)
+        
+        # fused image    
+        if fused_img.size(1) == 3:  # if input image is rgb
+            y_cbcr = kornia.color.rgb_to_ycbcr(fused_img)
+            Y, Cb, Cr = torch.split(y_cbcr, 1, dim=1)
+            F_to_A = self.A_model(Y).clip(0, 1)
+            F_to_B = self.B_model(Y).clip(0, 1)
+            
+            F_to_A = kornia.color.ycbcr_to_rgb(torch.cat([F_to_A, Cb, Cr], dim=1))
+            # F_to_B = kornia.color.ycbcr_to_rgb(torch.cat([F_to_B, Cb, Cr], dim=1))
+        else:  # if input image is gray image
+            F_to_A = self.A_model(fused_img)
+            F_to_B = self.B_model(fused_img)
+        
+        # translation fused image
+        
+        # NOTE: note that the implementation should double
+        # the computation graph to calculate the refusion loss
+        # this may cause the GPU memory issue.
+        if self.detach_fused:
+            fused_img_detach = fused_img.detach()
+        else:
+            fused_img_detach = fused_img
+        trans_fused_img = self.apply_translation(fused_img_detach)
+        
+        if fused_img.size(1) == 3:  # if input image is rgb
+            y_cbcr = kornia.color.rgb_to_ycbcr(trans_fused_img)
+            Y, Cb, Cr = torch.split(y_cbcr, 1, dim=1)
+            Ft_to_A = self.A_model(Y).clip(0, 1)
+            Ft_to_B = self.B_model(Y).clip(0, 1)
+            
+            Ft_to_A = kornia.color.ycbcr_to_rgb(torch.cat([Ft_to_A, Cb, Cr], dim=1))
+            # Ft_to_B = kornia.color.ycbcr_to_rgb(torch.cat([Ft_to_B, Cb, Cr], dim=1))
+        else:  # if input image is gray image
+            Ft_to_A = self.A_model(trans_fused_img)
+            Ft_to_B = self.B_model(trans_fused_img)
+        
+        # refusion
+        if self.model_is_y_pred:
+            Ft_to_A_ycbcr = kornia.color.rgb_to_ycbcr(Ft_to_A)
+            _Ft_A_y = Ft_to_A_ycbcr[:, :1]
+            _Ft_A_cbcr = Ft_to_A_ycbcr[:, 1:]
+        else:
+            _Ft_A_y = Ft_to_A
+            _Ft_A_cbcr = None
+        Ft_refused = self.fusion_model.only_fusion_step(_Ft_A_y, Ft_to_B)
+        if self.model_is_y_pred:
+            Ft_refused = kornia.color.ycbcr_to_rgb(torch.cat([Ft_refused, _Ft_A_cbcr], dim=1))
+        
+        # three losse
+        # 1. source A loss
+        loss_A = self.translation_basic_loss(F_to_A, s_A)
+        
+        # 2. source B loss
+        loss_B = self.translation_basic_loss(F_to_B, s_B)
+        
+        # 3. refusion loss
+        loss_refusion = self.translation_basic_loss(Ft_refused, trans_fused_img) * self.refusion_weight
+        
+        return loss_A + loss_B + loss_refusion
+        
+    def translation_basic_loss(self, Ft_to_any, source):
+        l1_loss = F.l1_loss(Ft_to_any, source)
+        grad_loss = F.l1_loss(spatial_gradient(Ft_to_any),
+                              spatial_gradient(source))
+        
+        return l1_loss + grad_loss
+    
+    def forward(self,
+                fused: torch.Tensor,
+                source_AB: "torch.Tensor | tuple[torch.Tensor, torch.Tensor]",
+                mask: torch.Tensor=None):
+        loss_dict = {}
+        
+        if isinstance(source_AB, Sequence):
+            A, B = source_AB
+        elif isinstance(source_AB, torch.Tensor):
+            A, B = source_AB[:, :3], source_AB[:, 3:]
+        else:
+            raise ValueError('source_AB should be a tuple or a tensor')
+        
+        if self.main_once_fusion_loss:
+            fused_loss, _ = self.main_once_fusion_loss(fused, (A, B), mask=mask)
+            loss_dict['fusion_loss'] = fused_loss
+            
+        translation_loss = self.translation_loss(fused, A, B) * self.translation_weight
+        loss_dict['tra_loss'] = translation_loss
+        
+        return fused_loss + translation_loss, loss_dict
+    
+    def apply_translation(self, x):
+        if self.shift_n>0:
+            x_shift = self.shift_random(x, self.shift_n)
+        if self.rotate_n>0:
+            x_rotate = self.rotate_random(x, self.rotate_n)
+        if self.flip_n>0:
+            x_flip = self.flip_random(x, self.flip_n)
+
+        if self.shift_n>0:
+            x = torch.cat((x,x_shift),0)
+        if self.rotate_n>0:
+            x = torch.cat((x,x_rotate),0)
+        if self.flip_n>0:
+            x = torch.cat((x,x_flip),0)
+            
+        return x
+    
+    @staticmethod  
+    def shift_random(x, n_trans=5):
+        H, W = x.shape[-2], x.shape[-1]
+        assert n_trans <= H - 1 and n_trans <= W - 1, 'n_shifts should less than {}'.format(H-1)
+        shifts_row = random.sample(list(np.concatenate([-1*np.arange(1, H), np.arange(1, H)])), n_trans)
+        shifts_col = random.sample(list(np.concatenate([-1*np.arange(1, W), np.arange(1, W)])), n_trans)
+        x = torch.cat([torch.roll(x, shifts=[sx, sy], dims=[-2,-1]).type_as(x) for sx, sy in zip(shifts_row, shifts_col)], dim=0)
+        
+        return x
+
+    @staticmethod
+    def rotate_random(data, n_trans=5, random_rotate=False):
+        if random_rotate:
+            theta_list = random.sample(list(np.arange(1, 359)), n_trans)
+        else:
+            theta_list = np.arange(10, 360, int(360 / n_trans))
+        # data = torch.cat([kornia.geometry.rotate(data, torch.Tensor([theta]).type_as(data))for theta in theta_list], dim=0)
+        d = []
+        for theta in theta_list:
+            d.append(kornia.geometry.rotate(data, torch.tensor(theta).to(data)))
+        
+        return torch.cat(d, dim=0)
+    
+    @staticmethod
+    def flip_random(data, n_trans=3):
+        assert n_trans <= 3, 'n_flip should less than 3'
+        
+        if n_trans>=1:
+            data1=kornia.geometry.transform.hflip(data)
+        if n_trans>=2:
+            data2=kornia.geometry.transform.vflip(data)
+            data1=torch.cat((data1,data2),0)
+        if n_trans==3:
+            data1=torch.cat((data1,kornia.geometry.transform.hflip(data2)),0)        
+            
+        return data1
+
+    
+def get_emma_fusion_loss(fusion_model: nn.Module, 
+                         device: str=None,
+                         model_is_y_pred: bool=True):
+    from utils.utils_modules import TranslationUnet
+    
+    # color bg may cause object color shift, so we constraint on the whole image
+    main_loss = DRMFFusionLoss(reduce_label=False, color_loss_bg_masked=True)
+    if device is not None:
+        main_loss = main_loss.to(device)
+    else:
+        main_loss = main_loss.cuda()
+        
+    return EMMAFusionLoss(
+        fusion_model=fusion_model,
+        to_source_A_model=TranslationUnet,
+        to_source_B_model=TranslationUnet,
+        A_pretrain_path='utils/ckpts/Av.pth',
+        B_pretrain_path='utils/ckpts/Ai.pth',
+        A_model_kwargs={},
+        B_model_kwargs={},
+        translation_kwargs={'shift_num': 0, 'rotate_num': 1, 'flip_num': 2},
+        main_once_fusion_loss=main_loss,
+        detach_fused=True,  # avoid GPU OOM
+        translation_weight=6.,
+        refusion_weight=0.1,
+        model_pred_y=model_is_y_pred
+    )
+
+# TODO: fusion task: add loss on mask
+from typing_extensions import TypedDict, Unpack, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    class GetLossKwargsdType(TypedDict):
+        latent_weighted: bool
+        tv_loss: bool
+        grad_loss: bool
+        ssim_loss: bool
+        tv_loss: bool
+        pseudo_l1_const: float
+        correlation_loss: bool
+        reduce_label: bool
+        weight_dict: dict
+
+def get_loss(loss_type, channel=31, **kwargs: "Unpack[GetLossKwargsdType]"):
+    
     if loss_type == "mse":
         criterion = nn.MSELoss()
     elif loss_type == "l1":
@@ -1010,6 +1626,19 @@ def get_loss(loss_type, channel=31):
         criterion = CDDFusionLoss(weights=(1.5, 1, 1))
     elif loss_type == "swinfusion":
         criterion = SwinFusionLoss()
+    elif loss_type == 'drmffusion':
+        criterion = DRMFFusionLoss(latent_weighted=kwargs.pop('latent_weighted', True),
+                                   grad_loss=kwargs.pop('grad_loss', True),
+                                   ssim_loss=kwargs.pop('ssim_loss', True),
+                                   tv_loss=kwargs.pop('tv_loss', False),
+                                   pseudo_l1_const=kwargs.pop('pseudo_l1_const', 1.4e-3),
+                                   correlation_loss=kwargs.pop('correlation_loss', False),
+                                   reduce_label=kwargs.pop('reduce_label', True),
+                                   weight_dict=kwargs.pop('weight_dict', None))
+    elif loss_type == 'emmafusion':
+        criterion = get_emma_fusion_loss(kwargs.pop('fusion_model'),
+                                         kwargs.pop('device'),
+                                         kwargs.pop('model_is_y_pred'))
     else:
         raise NotImplementedError(f"loss {loss_type} is not implemented")
     return criterion
@@ -1025,46 +1654,71 @@ if __name__ == "__main__":
     # print(l)
     # print(x.grad)
 
-    import PIL.Image as Image
+    # import PIL.Image as Image
 
-    vi = (
-        np.array(
-            Image.open(
-                "/media/office-401/Elements SE/cao/ZiHanCao/datasets/RoadScene_and_TNO/training_data/vi/FLIR_05857.jpg"
-            ).convert("L")
-        )
-        / 255
-    )
-    ir = (
-        np.array(
-            Image.open(
-                "/media/office-401/Elements SE/cao/ZiHanCao/datasets/RoadScene_and_TNO/training_data/ir/FLIR_05857.jpg"
-            ).convert("L")
-        )
-        / 255
-    )
+    # vi = (
+    #     np.array(
+    #         Image.open(
+    #             "/media/office-401/Elements SE/cao/ZiHanCao/datasets/RoadScene_and_TNO/training_data/vi/FLIR_05857.jpg"
+    #         ).convert("L")
+    #     )
+    #     / 255
+    # )
+    # ir = (
+    #     np.array(
+    #         Image.open(
+    #             "/media/office-401/Elements SE/cao/ZiHanCao/datasets/RoadScene_and_TNO/training_data/ir/FLIR_05857.jpg"
+    #         ).convert("L")
+    #     )
+    #     / 255
+    # )
 
-    torch.cuda.set_device("cuda:0")
+    # torch.cuda.set_device("cuda:0")
 
-    vi = torch.tensor(vi)[None, None].float()  # .cuda()
-    ir = torch.tensor(ir)[None, None].float()  # .cuda()
+    # vi = torch.tensor(vi)[None, None].float()  # .cuda()
+    # ir = torch.tensor(ir)[None, None].float()  # .cuda()
 
-    fuse = ((vi + ir) / 2).repeat_interleave(2, dim=0)
-    fuse.requires_grad_()
-    print(fuse.requires_grad)
+    # fuse = ((vi + ir) / 2).repeat_interleave(2, dim=0)
+    # fuse.requires_grad_()
+    # print(fuse.requires_grad)
 
-    gt = torch.cat((vi, ir), dim=1).repeat_interleave(2, dim=0)
+    # gt = torch.cat((vi, ir), dim=1).repeat_interleave(2, dim=0)
 
     # fuse_loss = HybridSSIMRMIFuse(weight_ratio=(1.0, 1.0, 1.0), ssim_channel=1)
-    # fuse_loss = U2FusionLoss().cuda(1)
+    
+    torch.cuda.set_device("cuda:1")
+    
+    class FuseModel:
+        def only_fusion_step(self, a, b):
+            return a + b
+    
+    # fuse_loss = DRMFFusionLoss(reduce_label=True).cuda()
+    fuse_loss = get_emma_fusion_loss(FuseModel())
+    # print(fuse_loss(fused, (vis, ir), mask))
+    
+    # u2fusion_loss = U2FusionLoss().cuda()
+    
+    import time
+    while True:
+        fused = torch.randn(1, 3, 64, 64).cuda().requires_grad_()
+        vis = torch.randn(1, 3, 64, 64).cuda().requires_grad_()
+        ir = torch.randn(1, 1, 64, 64).cuda().requires_grad_()
+        mask = torch.randint(0, 3, (1, 1, 64, 64)).cuda().float()
+        
+        loss = fuse_loss(fused, (vis, ir))
+        loss[0].backward()
+        print(loss)
+        time.sleep(0.1)
+    
+    
     # fuse_loss = HybridPIALoss().cuda(1)
-    fuse_loss = CDDFusionLoss()  # .cuda()
-    loss, loss_d = fuse_loss(fuse, gt)
-    loss.backward()
-    print(loss)
-    print(loss_d)
+    # fuse_loss = CDDFusionLoss()  # .cuda()
+    # loss, loss_d = fuse_loss(fuse, gt)
+    # loss.backward()
+    # print(loss)
+    # print(loss_d)
 
-    print(fuse.grad)
+    # print(fuse.grad)
 
     # mcg_mci_loss = HybridMCGMCI()
     # print(mcg_mci_loss(fuse, gt))

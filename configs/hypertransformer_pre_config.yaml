@@ -1,0 +1,37 @@
+optimizer:
+  name: 'adamw'
+  lr: !!float 1e-3
+  weight_decay: !!float 1e-4
+
+max_norm: 0.003
+
+lr_scheduler:
+  name: 'multi_step'
+  milestones: [300]
+  gamma: 0.1
+#   name: 'identity'
+
+path:
+  train_path: '/Data3/cao/cavex4/test_cavepatches128-2.h5'
+  val_path: '/Data3/cao/ZiHanCao/datasets/HISI/new_cave/test_cave(with_up)x4.h5'
+  
+  # train_path: "/media/office-401/Elements SE/cao/ZiHanCao/datasets/HISI/data_Pavia/Train_Pavia.h5"
+  # val_path: "/media/office-401/Elements SE/cao/ZiHanCao/datasets/HISI/data_Pavia/Test_Pavia.h5"
+
+  # train_path: "/media/office-401/Elements SE/cao/ZiHanCao/datasets/HISI/data_Botswana/Train_Botswana.h5"
+  # val_path: "/media/office-401/Elements SE/cao/ZiHanCao/datasets/HISI/data_Botswana/Test_Botswana.h5"
+
+network_configs: 
+    config: none
+#   in_c: 31
+#   out_c: 31
+#   rgb_c: 3
+#   factor: 4
+#   is_dhp_ms: no
+#   lr_size: 16
+#   feature_sum: no
+
+logger_config:
+    name: 'hypertransformer_pre'
+    base_path: './log_file/'
+    file_mode: 'w'

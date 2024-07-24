@@ -1,6 +1,6 @@
 import os
 import os.path as osp
-from typing import Tuple, Union
+from typing import Literal, Tuple, Union
 
 import cv2
 import numpy as np
@@ -8,6 +8,20 @@ import torch
 from torch import Tensor
 import matplotlib.pyplot as plt
 from utils.misc import to_numpy
+
+def get_rgb_channel_by_dataset_name(tensor, dataset_name: str):
+    if dataset_name in ('wv3', 'wv2'):
+        return tensor[:, [4,2,0], ...]
+    elif dataset_name in ('gf2', 'qb'):
+        return tensor[:, :3, ...]
+    elif dataset_name in ('gf5', 'gf5-gf1'):
+        return tensor[:, [40, 30, 20], ...]
+    elif dataset_name == 'houston':
+        return tensor[:, [39, 29, 19], ...]
+    elif 'cave' in dataset_name or 'harvard' in dataset_name:
+        return tensor[:, [29, 19, 9], ...]
+    else:
+        return tensor[:, :3, ...]
 
 
 def permute_dim(*args):
@@ -17,7 +31,7 @@ def permute_dim(*args):
     return d
 
 
-def normalize(img):
+def normalize(img, to_uint8=True):
     """
     centering image to show
     :param img: numpy array, shape [H, W, C]
@@ -25,8 +39,9 @@ def normalize(img):
     """
     img = img - img.min((0, 1))
     img = img / img.max((0, 1))
-    img *= 255
-    img = img.astype('uint8')
+    if to_uint8:
+        img *= 255
+        img = img.astype('uint8')
     return img
 
 
@@ -88,19 +103,31 @@ def res_image(gt: Tensor, sr: Tensor, *, exaggerate_ratio: int = None) -> torch.
     return res
 
 
-def get_spectral_image_ready(batch_image, name: str) -> torch.Tensor:
-    img_arrs = batch_image.permute(0, 2, 3, 1).cpu().numpy()
-    # FIXME: when residual image passed, there is no need hist equalization
-    equalized_img = [torch.tensor(hist_equal(normalize(i))).permute(-1, 0, 1)[None, ...] for i in
-                     img_arrs]  # [1, C, H, W]
-    grid = torch.cat(equalized_img, dim=0)
-    if name in ('residual', 'pan'):
-        return grid
+def get_spectral_image_ready(batch_image: Tensor, 
+                             tensor_name: str, 
+                             ds_name: Literal['wv3', 'wv2', 'gf2', 'qb',
+                                              'gf5', 'gf5-gf1', 'flir', 'tno',
+                                              'msrs']=None) -> Tensor:
+    # batch_image: [B, C, H, W]
+    if tensor_name in ('lms', 'ms', 'sr'):  # for pansharpening and HISR tasks
+        batch_image = get_rgb_channel_by_dataset_name(batch_image, ds_name)
+    elif tensor_name == 'pan' and batch_image.shape[1] > 3:
+        batch_image = batch_image[:, :3]
+    
+    img_arrs = batch_image.permute(0, 2, 3, 1).detach().cpu().numpy()  # [B, H, W, C]
+    if ds_name in ['flir', 'tno', 'msrs']:
+        transform_fn = lambda x, const: torch.tensor(x, dtype=torch.float32)
     else:
-        if grid.shape[1] > 4:  # wv3, wv2
-            return grid[:, [0, 2, 4], ...]  # select 3 channels to show
-        else:  # gf, qb
-            return grid[:, :3, ...]
+        transform_fn = lambda x, const: torch.tensor(normalize(x, to_uint8=False) * const)
+    
+    if 'res' in tensor_name:
+        equalized_img = [transform_fn(i, 10).permute(-1, 0, 1)[None, ...] for i in img_arrs]  # [1, C, H, W]
+    else:
+        equalized_img = [transform_fn(i, 1).permute(-1, 0, 1)[None, ...] for i in img_arrs]
+        
+    grid = torch.cat(equalized_img, dim=0)
+    
+    return grid
 
 
 def viz_batch(img: Tensor, base_path='./visualized_img', suffix=None, start_index=1, format='jpg'):
@@ -161,7 +188,7 @@ def show_details(img: np.ndarray,
         area_pixels (Tuple[int, int]): pixel area of the patch
         interp_ratio (int, optional): interpolate ratio. Defaults to 3.
         color (Tuple[int, int, int], optional): color of the box. Defaults to (0, 255, 0).
-                                                ome recommend colors:
+                                                recommend colors:
                                                     (236,229,240)
                                                     (233,138,21)
                                                     (0,59,54)

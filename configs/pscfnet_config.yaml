@@ -1,0 +1,36 @@
+optimizer:
+  name: 'adamw'
+  lr: !!float 8e-4
+  weight_decay: !!float 1e-7
+
+lr_scheduler:
+  name: 'cos_anneal'
+  T_max: 500
+  eta_min: !!float 1e-7
+#  name: 'plateau'
+#  mode: 'min'
+#  threshold: !!float 1e-4 # mse
+#  min_lr: !!float 0.
+#  patience: 8
+#  factor: !!float 0.5
+
+max_norm: 0.003
+
+path:
+  #  train_path: '/Data2/DataSet/HISR/CAVE/train_cave(with_up)x4.h5'
+  #  val_path: '/Data2/DataSet/HISR/CAVE/validation_cave(with_up)x4.h5'
+  #  train_path: '/home/ZiHanCao/datasets/pansharpening/wv3/training_wv3/train_wv3.h5'
+  #  val_path: '/home/ZiHanCao/datasets/pansharpening/wv3/training_wv3//valid_wv3.h5'
+  #  train_path: '/home/ZiHanCao/datasets/pansharpening/gf/training_gf2/train_gf2.h5'
+  #  val_path: '/home/ZiHanCao/datasets/pansharpening/gf/training_gf2/valid_gf2.h5'
+  #  train_path: '/home/ZiHanCao/datasets/pansharpening/qb/training_qb/train_qb.h5'
+  #  val_path: '/home/ZiHanCao/datasets/pansharpening/qb/training_qb/valid_qb.h5'
+#  train_path: '/home/ZiHanCao/datasets/HISI/new_cave/train_cave(with_up)x4.h5'
+#  val_path: '/home/ZiHanCao/datasets/HISI/new_cave/validation_cave(with_up)x4.h5'
+  train_path: '/home/ZiHanCao/datasets/HISI/new_harvard/train_harvard(with_up)x4_rgb.h5'
+  val_path: '/home/ZiHanCao/datasets/HISI/new_harvard/validation_harvard(with_up)x4_rgb.h5'
+
+
+
+network_configs:
+  input_channel: 8

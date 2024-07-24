@@ -5,6 +5,8 @@
 # @Time    : 2021/10/15 17:53
 # @Author  : Xiao Wu
 # reference:
+from functools import partial
+import inspect
 from typing import Tuple, Optional
 
 import einops
@@ -13,89 +15,193 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 from torch.utils.data import DataLoader
-from torch import Tensor
+from torch import Tensor, nn
 from tqdm import tqdm
+import json
+import re
+import glob
 
 from .visualize import viz_batch, res_image
 from .metric import AnalysisPanAcc
-from model.base_model import BaseModel, PatchMergeModule
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from model.base_model import BaseModel
+
+def has_patch_merge_model(model: "nn.Module | BaseModel"):
+    return (hasattr(model, '_patch_merge_model')) or (hasattr(model, 'patch_merge_model'))
+
+
+def patch_merge_in_val_step(model: "nn.Module | BaseModel"):
+    return 'patch_merge' in list(inspect.signature(model.val_step).parameters.keys())
+
+def has_patch_merge_model(model: "nn.Module | BaseModel"):
+    return (hasattr(model, '_patch_merge_model')) or (hasattr(model, 'patch_merge_model'))
+
+
+def patch_merge_in_val_step(model):
+    return 'patch_merge' in list(inspect.signature(model.val_step).parameters.keys())
+
+
+# callback function
+def basic_callback(model: "BaseModel", iter_idx: int):
+    from utils import get_local
+    assert get_local().cache is not None and get_local.is_activate
+    
+    cache = get_local().cache
+    attns = cache['_forward_implem']
+    
+    get_local.clear()
+
+
+############ Main inference function ############
 
 @torch.no_grad()
+@torch.inference_mode()
 def unref_for_loop(model,
                    dl: DataLoader,
                    device,
-                   sz,
                    *,
                    split_patch=False,
+                   feature_callback: callable=None,
                    **patch_merge_module_kwargs):
-    bs = dl.batch_size
+    from model.base_model import PatchMergeModule
+    
     all_sr = []
-    spa_size = tuple(dl.dataset.lms.shape[-2:])
-    inference_bar = tqdm(enumerate(dl, 1), dynamic_ncols=True, total=sz)
+    try:
+        spa_size = tuple(dl.dataset.lms.shape[-2:])
+    except AttributeError:
+        spa_size = tuple(dl.dataset.rgb.shape[-2:])
+    
+    inference_bar = tqdm(enumerate(dl, 1), dynamic_ncols=True, total=len(dl))
+    analysis = AnalysisPanAcc(ratio=patch_merge_module_kwargs.get('ergas_ratio', 4), ref=False,
+                              sensor=patch_merge_module_kwargs.get('sensor', 'DEFAULT'),
+                              default_max_value=patch_merge_module_kwargs.get('default_max_value', None))
+    
     if split_patch:
-        # assert bs == 1, 'batch size should be 1'
-        model = PatchMergeModule(net=model, device=device, **patch_merge_module_kwargs)
+        # check if has the patch merge model
+        if not (has_patch_merge_model(model) or patch_merge_in_val_step(model)):
+            # assert bs == 1, 'batch size should be 1'
+            
+            # warp the model into PatchMergeModule
+            model = PatchMergeModule(net=model, device=device, **patch_merge_module_kwargs)
+            
     for i, (pan, ms, lms) in inference_bar:
         pan, ms, lms = pan.to(device).float(), ms.to(device).float(), lms.to(device).float()
         # split the image into several patches to avoid gpu OOM
         if split_patch:
-            pan_nc = pan.size(1)
-            ms_nc = ms.size(1)
-            input = (
-                F.interpolate(ms, size=lms.shape[-1], mode='bilinear', align_corners=True),
-                lms,
-                torch.cat([pan, torch.zeros(bs, ms_nc - pan_nc, *spa_size).to(device)], dim=1)
-            )
-            sr = model.forward_chop(*input)[0]
-        # read images just once
+            input = (ms, lms, pan)
+            if hasattr(model, 'forward_chop'):
+                sr = model.forward_chop(*input)[0]
+            elif patch_merge_in_val_step(model):
+                sr = model.val_step(*input, patch_merge=True)
+            else:
+                raise NotImplemented('model should have @forward_chop or patch_merge arg in @val_step')
         else:
-            sr = model.val_step(ms, lms, pan)
+            if patch_merge_in_val_step(model):
+                sr = model.val_step(ms, lms, pan, False)
+            else:
+                sr = model.val_step(ms, lms, pan)
         sr = sr.clip(0, 1)
         sr1 = sr.detach().cpu().numpy()
         all_sr.append(sr1)
-        viz_batch(sr.detach().cpu(), suffix='sr', start_index=i)
-        viz_batch(ms.detach().cpu(), suffix='ms', start_index=i)
-        viz_batch(pan.detach().cpu(), suffix='pan', start_index=i)
+        
+        # analysis(sr, ms, lms, pan)
+        
+        viz_batch(sr.detach().cpu(), suffix='sr', start_index=i, base_path='visualized_img/img_shows')
+        viz_batch(ms.detach().cpu(), suffix='ms', start_index=i, base_path='visualized_img/img_shows')
+        viz_batch(pan.detach().cpu(), suffix='pan', start_index=i, base_path='visualized_img/img_shows')
+        
+        if feature_callback is not None:
+            feature_callback(model, i)
+        
+    print(analysis.print_str())
 
     return all_sr
 
 
 @torch.no_grad()
+@torch.inference_mode()
 def ref_for_loop(model,
                  dl,
                  device,
-                 crop_bs,
                  *,
                  split_patch=False,
                  ergas_ratio=4,
                  residual_exaggerate_ratio=100,
+                 feature_callback: callable=None,
                  **patch_merge_module_kwargs):
+    from model.base_model import PatchMergeModule
+    
+    
     analysis = AnalysisPanAcc(ergas_ratio)
     all_sr = []
-    inference_bar = tqdm(enumerate(dl, 1), dynamic_ncols=True, total=math.floor(dl.dataset.__len__() / dl.batch_size))
+    inference_bar = tqdm(enumerate(dl, 1), dynamic_ncols=True, total=len(dl))
 
-    if split_patch:
-        # assert bs == 1, 'batch size should be 1'
-        model = PatchMergeModule(net=model, device=device, crop_batch_size=crop_bs, scale=ergas_ratio, **patch_merge_module_kwargs)
+    if not (has_patch_merge_model(model) or patch_merge_in_val_step(model)):
+            # assert bs == 1, 'batch size should be 1'
+            
+            # warp the model into PatchMergeModule
+            model = PatchMergeModule(net=model, device=device, **patch_merge_module_kwargs)
     for i, (pan, ms, lms, gt) in inference_bar:
         pan, ms, lms, gt = pan.to(device).float(), ms.to(device).float(), lms.to(device).float(), gt.to(device).float()
+        
+        # def down_and_ups(x, ratio):
+        #     x = F.interpolate(x, size=(int(256/1.2), int(256/1.2)), mode='bilinear', antialias=True)
+        #     return F.interpolate(x, size=(256, 256), mode='bilinear', antialias=True)
+        # ms, pan, lms, gt = map(partial(down_and_ups, ratio=1.2), [ms, pan, lms, gt])
+        
         # split the image into several patches to avoid gpu OOM
         if split_patch:
-            # spa_size = tuple(dl.dataset.gt.shape[-2:])
-            # pan_nc = pan.size(1)
-            # ms_nc = ms.size(1)
-            # input = (
-            #     F.interpolate(ms, size=lms.shape[-1], mode='bilinear', align_corners=True),
-            #     lms,
-            #     torch.cat([pan, torch.zeros(bs, ms_nc - pan_nc, *spa_size).to(device)], dim=1)
-            # )
-            
             input = (ms, lms, pan)
-            sr = model.forward_chop(*input)[0]
-        # read images just once
+            if hasattr(model, 'forward_chop'):
+                sr = model.forward_chop(*input)[0]
+            elif patch_merge_in_val_step(model):
+                sr = model.val_step(*input, patch_merge=split_patch)
+            else:
+                raise NotImplemented('model should have @forward_chop or patch_merge arg in @val_step')
         else:
-            sr = model.val_step(ms, lms, pan)
+            if patch_merge_in_val_step(model):
+                sr = model.val_step(ms, lms, pan, False)
+            else:
+                sr = model.val_step(ms, lms, pan)
+                
+        if feature_callback is not None:
+            feature_callback(model, i)
+                
+        # cache = get_local().cache
+        # attns = cache['FirstAttn.forward']
+        
+        ## panRWKV output feature
+        # if i in [4]:
+        #     cache = get_local().cache
+        #     out = cache['RWKVBlock_v2.forward']
+            
+        #     torch.save(out, f'visualized_img/lformer_full_attn_feat/output_feat_{i}.pth')
+
+        # get_local.clear()
+        
+        ## save panMamba updated_xs
+        # if i in [11]:
+        #     cache = get_local().cache
+        #     # feat_ssm_states = cache['UniSequential.LEMM_enc_forward']
+        #     # attns = cache['MSReversibleRefine.forward']
+        #     feat_updated_xs = cache['cross_selective_scan']
+        #     # for x in attns:
+        #     #     if x[0] is not None:
+        #     #         x[0] = x[0].to(torch.float16)
+        #             # x[1] = x[1].to(torch.float16)
+                    
+        #     for x in feat_updated_xs:
+        #         if x[0] is not None:
+        #             x[0] = x[0].to(torch.float16)
+        #         if x[1] is not None:
+        #             x[1] = x[1].to(torch.float16)
+                    
+        #     torch.save(feat_updated_xs, f'/Data2/ZiHanCao/exps/panformer/visualized_img/updated_xs/updated_xs_wv3_{i}.pth')
+        # print('saved pth file...')
+        # get_local.clear()
+                
         sr = sr.clip(0, 1)
         sr1 = sr.detach().cpu().numpy()
         all_sr.append(sr1)
@@ -103,11 +209,11 @@ def ref_for_loop(model,
         analysis(gt, sr)
 
         res = res_image(gt, sr, exaggerate_ratio=residual_exaggerate_ratio)
-        viz_batch(sr.detach().cpu(), suffix='sr', start_index=i)
-        viz_batch(gt.detach().cpu(), suffix='gt', start_index=i)
-        viz_batch(ms.detach().cpu(), suffix='ms', start_index=i)
-        viz_batch(pan.detach().cpu(), suffix='pan', start_index=i)
-        viz_batch(res.detach().cpu(), suffix='residual', start_index=i)
+        viz_batch(sr.detach().cpu(), suffix='sr', start_index=i, base_path='visualized_img/img_shows')
+        viz_batch(gt.detach().cpu(), suffix='gt', start_index=i, base_path='visualized_img/img_shows')
+        viz_batch(ms.detach().cpu(), suffix='ms', start_index=i, base_path='visualized_img/img_shows')
+        viz_batch(pan.detach().cpu(), suffix='pan', start_index=i, base_path='visualized_img/img_shows')
+        viz_batch(res.detach().cpu(), suffix='residual', start_index=i, base_path='visualized_img/img_shows')
 
         # print(f'PSNR: {psnr}, SSIM: {ssim}')
 
@@ -150,303 +256,75 @@ def gather_nd(tensor, indexes, ndim):
     return gathered
 
 
-# class PatchMergeModule(nn.Module):
-#     def __init__(self,
-#                  crop_batch_size=1,
-#                  patch_size=128,
-#                  scale=1,
-#                  hisi=False,
-#                  device='cuda:0',
-#                  bs_axis_merge=True):
-#         super().__init__()
-#         if bs_axis_merge:
-#             self.split_func = torch.split
-#         else:
-#             self.split_func = lambda x, _, dim: [x]
-#         self.crop_batch_size = crop_batch_size
-#         self.patch_size = patch_size
-#         self.scale = scale
-#
-#     def forward(self, x):
-#
-#         return x, x
-#
-#     def forward_chop(self, *x, shave=12, **kwargs):
-#         # 不存在输入张量不一样的情况, 如不一样请先处理成一样的再输入
-#         # 但输出存在维度不一样的情况, 因为网络有多层并且每层尺度不同, 进行分开处理: final_output, intermediate_output
-#         # TODO: bug: 1. 输出的张量尺寸不一样的时候 无法进行fold操作, 一是因为参数, 二是可能还原不回去
-#         #            2. unfold的在重叠切的时候是共享原始数据的，所以后者会覆盖前者
-#
-#         x = torch.cat(x, dim=0)
-#         split_func = self.split_func
-#         # self.axes[1][0].imshow(x[0, ...].permute(1, 2, 0).cpu().numpy() / 255)
-#         x.cpu()
-#         batchsize = self.crop_batch_size
-#         patch_size = self.patch_size
-#
-#         b, c, h, w = x.size()
-#         if isinstance(patch_size, (list, tuple)):
-#             (h_padsize, w_padsize) = patch_size
-#             hshave, wshave = h_padsize // 2, w_padsize // 2
-#         else:
-#             h_padsize = w_padsize = int(patch_size)
-#             hshave = wshave = patch_size // 2
-#         # print(self.scale, self.idx_scale)
-#         scale = self.scale  # self.scale[self.idx_scale]
-#
-#         h_cut = (h - h_padsize) % (int(hshave / 2))
-#         w_cut = (w - w_padsize) % (int(wshave / 2))
-#
-#         x_unfold = F.unfold(x, (h_padsize, w_padsize), stride=(int(hshave / 2), wshave // 2)).permute(2, 0,
-#                                                                                                       1).contiguous()
-#
-#         ################################################
-#         # 最后一块patch单独计算
-#         ################################################
-#
-#         x_hw_cut = x[..., (h - h_padsize):, (w - w_padsize):]
-#         y_hw_cut = self.forward(*[s.cuda() for s in split_func(x_hw_cut, [1, 1], dim=0)], **kwargs)
-#         y_hw_cut = self.forward(*[s.cuda() for s in split_func(x_hw_cut, [1, 1], dim=0)], **kwargs)
-#
-#         x_h_cut = x[..., (h - h_padsize):, :]
-#         x_w_cut = x[..., :, (w - w_padsize):]
-#         y_h_cut = self.cut_h(x_h_cut, h, w, c, h_cut, w_cut, (h_padsize, w_padsize), (hshave, wshave), scale, batchsize,
-#                              **kwargs)
-#         y_w_cut = self.cut_w(x_w_cut, h, w, c, h_cut, w_cut, (h_padsize, w_padsize), (hshave, wshave), scale, batchsize,
-#                              **kwargs)
-#         # self.axes[0][0].imshow(y_h_cut[0, ...].permute(1, 2, 0).cpu().numpy() / 255)
-#         ################################################
-#         # 左上patch单独计算，不是平均而是覆盖
-#         ################################################
-#
-#         x_h_top = x[..., :h_padsize, :]
-#         x_w_top = x[..., :, :w_padsize]
-#         y_h_top = self.cut_h(x_h_top, h, w, c, h_cut, w_cut, (h_padsize, w_padsize), (hshave, wshave), scale, batchsize,
-#                              **kwargs)
-#         y_w_top = self.cut_w(x_w_top, h, w, c, h_cut, w_cut, (h_padsize, w_padsize), (hshave, wshave), scale, batchsize,
-#                              **kwargs)
-#
-#         # self.axes[0][1].imshow(y_h_top[0, ...].permute(1, 2, 0).cpu().numpy() / 255)
-#         ################################################
-#         # img->patch，最大计算crop_s个patch，防止bs*p*p太大
-#         ################################################
-#
-#         x_unfold = x_unfold.view(x_unfold.size(0), -1, c, h_padsize, w_padsize)
-#         y_unfold = []
-#
-#         x_range = x_unfold.size(0) // batchsize + (x_unfold.size(0) % batchsize != 0)
-#         x_unfold.cuda()
-#         for i in range(x_range):
-#             res = self.forward(
-#                 *[s[:, 0, ...] for s in split_func(x_unfold[i * batchsize:(i + 1) * batchsize, ...], [1, 1], dim=1)],
-#                 **kwargs)
-#             y_unfold.append(res)
-#             # y_unfold.append([s.cpu() for s in self.forward(*[s[:, 0, ...] for s in split_func(x_unfold[i * batchsize:(i + 1) * batchsize, ...], [1, 1], dim=1)]
-#             #     , **kwargs)])
-#             # P.data_parallel(self.model, x_unfold[i*batchsize:(i+1)*batchsize,...], range(self.n_GPUs)).cpu())
-#
-#         # for i, s in enumerate(zip(*y_unfold)):
-#         #     if i < len(y_unfold):
-#         #         y_unfold[i] = s
-#         #     else:
-#         #         y_unfold.append(s)
-#         if isinstance(y_unfold[0], tuple):
-#             y_unfold_out = [None] * len(y_unfold[0])
-#             for i, s in enumerate(zip(*y_unfold)):
-#                 y_unfold_out[i] = s
-#             y_unfold = y_unfold_out
-#             y_hw_cut = [s.cpu() for s in y_hw_cut]
-#         else:
-#             y_unfold = [y_unfold]
-#             y_hw_cut = [y_hw_cut.cpu()]
-#
-#         out = []
-#         for s_unfold, s_h_top, s_w_top, s_h_cut, s_w_cut, s_hw_cut in zip(y_unfold, y_h_top, y_w_top, y_h_cut, y_w_cut,
-#                                                                           y_hw_cut):
-#             s_unfold = torch.cat(s_unfold, dim=0).cpu()
-#
-#             y = F.fold(s_unfold.view(s_unfold.size(0), -1, 1).transpose(0, 2).contiguous(),
-#                        ((h - h_cut) * scale, (w - w_cut) * scale), (h_padsize * scale, w_padsize * scale),
-#                        stride=(int(hshave / 2 * scale), int(wshave / 2 * scale)))
-#             # 312， 480
-#             # self.axes[0][2].imshow(y[0, ...].permute(1, 2, 0).cpu().numpy() / 255)
-#             ################################################
-#             # 第一块patch->y
-#             ################################################
-#             y[..., :h_padsize * scale, :] = s_h_top
-#             y[..., :, :w_padsize * scale] = s_w_top
-#             # self.axes[0][3].imshow(y[0, ...].permute(1, 2, 0).cpu().numpy() / 255)
-#             s_unfold = s_unfold[...,
-#                        int(hshave / 2 * scale):h_padsize * scale - int(hshave / 2 * scale),
-#                        int(wshave / 2 * scale):w_padsize * scale - int(wshave / 2 * scale)].contiguous()
-#
-#             s_inter = F.fold(s_unfold.view(s_unfold.size(0), -1, 1).transpose(0, 2).contiguous(),
-#                              ((h - h_cut - hshave) * scale, (w - w_cut - wshave) * scale),
-#                              (h_padsize * scale - hshave * scale, w_padsize * scale - wshave * scale),
-#                              stride=(int(hshave / 2 * scale), int(wshave / 2 * scale)))
-#             # 1，3，750，540
-#             #
-#             s_ones = torch.ones(s_inter.shape, dtype=s_inter.dtype)
-#             divisor = F.fold(F.unfold(s_ones, (h_padsize * scale - hshave * scale, w_padsize * scale - wshave * scale),
-#                                       stride=(int(hshave / 2 * scale), int(wshave / 2 * scale))),
-#                              ((h - h_cut - hshave) * scale, (w - w_cut - wshave) * scale),
-#                              (h_padsize * scale - hshave * scale, w_padsize * scale - wshave * scale),
-#                              stride=(int(hshave / 2 * scale), int(wshave / 2 * scale)))
-#
-#             s_inter = s_inter.cpu() / divisor
-#             # self.axes[1][1].imshow(y_inter[0, ...].permute(1, 2, 0).cpu().numpy() / 255)
-#             ################################################
-#             # 第一个半patch
-#             ################################################
-#             y[..., int(hshave / 2 * scale):(h - h_cut) * scale - int(hshave / 2 * scale),
-#             int(wshave / 2 * scale):(w - w_cut) * scale - int(wshave / 2 * scale)] = s_inter
-#             # self.axes[1][2].imshow(y[0, ...].permute(1, 2, 0).cpu().numpy() / 255)
-#             y = torch.cat([y[..., :y.size(2) - int((h_padsize - h_cut) / 2 * scale), :],
-#                            s_h_cut[..., int((h_padsize - h_cut) / 2 * scale + 0.5):, :]], dim=2)
-#             # 图分为前半和后半
-#             # x->y_w_cut
-#             # model->y_hw_cut TODO:check
-#             y_w_cat = torch.cat([s_w_cut[..., :s_w_cut.size(2) - int((h_padsize - h_cut) / 2 * scale), :],
-#                                  s_hw_cut[..., int((h_padsize - h_cut) / 2 * scale + 0.5):, :]], dim=2)
-#             y = torch.cat([y[..., :, :y.size(3) - int((w_padsize - w_cut) / 2 * scale)],
-#                            y_w_cat[..., :, int((w_padsize - w_cut) / 2 * scale + 0.5):]], dim=3)
-#             out.append(y.cuda())
-#             # self.axes[1][3].imshow(y[0, ...].permute(1, 2, 0).cpu().numpy() / 255)
-#             # plt.show()
-#
-#         return out  # y.cuda()
-#
-#     def cut_h(self, x_h_cut, h, w, c, h_cut, w_cut, padsize, shave, scale, batchsize, **kwargs):
-#         split_func = self.split_func
-#         # 1, 3, 30, 600 -> (30, 120), s=(7, 30)
-#         # 1,3*30*120, 17 -> 17, 1, 3, 30, 120
-#         # N = [(H - k_h + 2*pad_h) / s_h + 1] * [(W - k_w + 2*pad_w) / s_w + 1]
-#         #   = [1+(30 - 30) / 7] * [1+(600 - 120) / 30] = 1*17 = 17
-#         x_h_cut_unfold = F.unfold(x_h_cut, padsize, stride=(int(shave[0] / 2), int(shave[1] / 2))).permute(2, 0,
-#                                                                                                            1).contiguous()  # transpose(0, 2)
-#         # N, B, -1, c, ph, pw: 17, 1, 3, 30, 120
-#         x_h_cut_unfold = x_h_cut_unfold.view(x_h_cut_unfold.size(0), -1, c,
-#                                              *padsize)  # x_h_cut_unfold.size(0), -1, padsize, padsize
-#         x_range = x_h_cut_unfold.size(0) // batchsize + (x_h_cut_unfold.size(0) % batchsize != 0)
-#         y_h_cut_unfold = []
-#         x_h_cut_unfold.cuda()
-#
-#         for i in range(x_range):
-#             res = self.forward(*[s[:, 0, ...] for s in
-#                                  split_func(x_h_cut_unfold[i * batchsize:(i + 1) * batchsize, ...], [1, 1], dim=1)],
-#                                **kwargs)
-#             y_h_cut_unfold.append(res)
-#             # y_h_cut_unfold.append([s.cpu() for s in self.forward(*[s[:, 0, ...] for s in split_func(x_h_cut_unfold[i * batchsize:(i + 1) * batchsize,
-#             #                                    ...], [1, 1], dim=1)], **kwargs)])  # P.data_parallel(self.model, x_h_cut_unfold[i*batchsize:(i+1)*batchsize,...], range(self.n_GPUs)).cpu())
-#
-#         # [[a0, b0, c0], [a1, b1, c1], ...] -> [[a0, a1], [b0, b1], ...] -> [cat() for s in [[a0, a1], [b0, b1], ...]]
-#
-#         if isinstance(y_h_cut_unfold[0], tuple):
-#             y_h_cut_unfold_out = [None] * len(y_h_cut_unfold[0])
-#             for i, s in enumerate(zip(*y_h_cut_unfold)):
-#                 y_h_cut_unfold_out[i] = s
-#             y_h_cut_unfold = y_h_cut_unfold_out
-#         else:
-#             y_h_cut_unfold = [y_h_cut_unfold]
-#         y_h_cut = []
-#
-#         for s_h_cut_unfold in y_h_cut_unfold:
-#             s_h_cut_unfold = torch.cat(s_h_cut_unfold, dim=0).cpu()
-#             # s_h_cut_unfold = s_h_cut_unfold.reshape(-1, c, *s_h_cut_unfold.size()[1:])
-#             # nH*nW, c, k, k: 3, 3, 100, 100 (17, 3, 30, 120)
-#             # out_size=(30, 600), k=(30, 120)
-#             s_h_cut = F.fold(
-#                 s_h_cut_unfold.view(s_h_cut_unfold.size(0), -1, 1).transpose(0, 2).contiguous(),
-#                 (padsize[0] * scale, (w - w_cut) * scale), (padsize[0] * scale, padsize[1] * scale),
-#                 stride=(int(shave[0] / 2 * scale), int(shave[1] / 2 * scale)))
-#             s_h_cut_unfold = s_h_cut_unfold[..., :,
-#                              int(shave[1] / 2 * scale):padsize[1] * scale - int(shave[1] / 2 * scale)].contiguous()
-#             # 17, 3, 30, 60
-#             # out_size=(30, 540), k=(30, 90)
-#             s_h_cut_inter = F.fold(
-#                 s_h_cut_unfold.view(s_h_cut_unfold.size(0), -1, 1).transpose(0, 2).contiguous(),
-#                 (padsize[0] * scale, (w - w_cut - shave[1]) * scale),
-#                 (padsize[0] * scale, padsize[1] * scale - shave[1] * scale),
-#                 stride=(int(shave[0] / 2 * scale), int(shave[1] / 2 * scale)))
-#
-#             s_ones = torch.ones(s_h_cut_inter.shape, dtype=s_h_cut_inter.dtype)
-#             divisor = F.fold(
-#                 F.unfold(s_ones, (padsize[0] * scale, padsize[1] * scale - shave[1] * scale),
-#                          stride=(int(shave[0] / 2 * scale), int(shave[1] / 2 * scale))),
-#                 (padsize[0] * scale, (w - w_cut - shave[1]) * scale),
-#                 (padsize[0] * scale, padsize[1] * scale - shave[1] * scale),
-#                 stride=(int(shave[0] / 2 * scale), int(shave[1] / 2 * scale)))
-#             s_h_cut_inter = s_h_cut_inter.cpu() / divisor
-#
-#             s_h_cut[..., :, int(shave[1] / 2 * scale):(w - w_cut) * scale - int(shave[1] / 2 * scale)] = s_h_cut_inter
-#             y_h_cut.append(s_h_cut)
-#
-#         return y_h_cut
-#
-#     def cut_w(self, x_w_cut, h, w, c, h_cut, w_cut, padsize, shave, scale, batchsize, **kwargs):
-#
-#         split_func = self.split_func
-#         # 1, 3, 792, 120 -> (30, 120), s=(7, 30) -> 109, 1, 3, 30, 120
-#         x_w_cut_unfold = F.unfold(x_w_cut, padsize, stride=(int(shave[0] / 2), int(shave[1] / 2))).permute(2, 0,
-#                                                                                                            1).contiguous()
-#
-#         x_w_cut_unfold = x_w_cut_unfold.view(x_w_cut_unfold.size(0), -1, c, *padsize)
-#         x_range = x_w_cut_unfold.size(0) // batchsize + (x_w_cut_unfold.size(0) % batchsize != 0)
-#         y_w_cut_unfold = []
-#         x_w_cut_unfold.cuda()
-#
-#         # TODO: [[a0, b0], [a1, b1], ...] -> [[a0, a1], [b0, b1], ...] -> [cat() for s in [[a0, a1], [b0, b1], ...]]
-#         for i in range(x_range):
-#             res = self.forward(*[s[:, 0, ...] for s in split_func(x_w_cut_unfold[i * batchsize:(i + 1) * batchsize,
-#                                                                   ...], [1, 1], dim=1)], **kwargs)
-#             y_w_cut_unfold.append(res)
-#             # y_w_cut_unfold.append((s.cpu() for s in self.forward(*[s[:, 0, ...]for s in split_func(x_w_cut_unfold[i * batchsize:(i + 1) * batchsize,
-#             #                                    ...], [1, 1], dim=1)], **kwargs)))  # P.data_parallel(self.model, x_w_cut_unfold[i*batchsize:(i+1)*batchsize,...], range(self.n_GPUs)).cpu())
-#         if isinstance(y_w_cut_unfold[0], tuple):
-#             y_w_cut_unfold_out = [None] * len(y_w_cut_unfold[0])
-#             for i, s in enumerate(zip(*y_w_cut_unfold)):
-#                 y_w_cut_unfold_out[i] = s
-#             y_w_cut_unfold = y_w_cut_unfold_out
-#         else:
-#             y_w_cut_unfold = [y_w_cut_unfold]
-#
-#         y_w_cut = []
-#         for s_w_cut_unfold in y_w_cut_unfold:
-#             s_w_cut_unfold = torch.cat(s_w_cut_unfold, dim=0).cpu()
-#             # s_w_cut_unfold = s_w_cut_unfold.reshape(-1, c, *s_w_cut_unfold.size()[1:])
-#             # 109,3,30,120
-#             # out_size=(786, 120), k=(30, 120)
-#             s_w_cut = F.fold(
-#                 s_w_cut_unfold.view(s_w_cut_unfold.size(0), -1, 1).transpose(0, 2).contiguous(),
-#                 ((h - h_cut) * scale, padsize[1] * scale), (padsize[0] * scale, padsize[1] * scale),
-#                 stride=(int(shave[0] / 2 * scale), int(shave[1] / 2 * scale)))
-#             s_w_cut_unfold = s_w_cut_unfold[...,
-#                              int(shave[0] / 2 * scale):padsize[0] * scale - int(shave[0] / 2 * scale),
-#                              :].contiguous()
-#             # 109, 3, 16, 120
-#             # out_size=(771, 120), k=(15, 120)
-#             s_w_cut_inter = F.fold(
-#                 s_w_cut_unfold.view(s_w_cut_unfold.size(0), -1, 1).transpose(0, 2).contiguous(),
-#                 ((h - h_cut - shave[0]) * scale, padsize[1] * scale),
-#                 (padsize[0] * scale - shave[0] * scale, padsize[1] * scale),
-#                 stride=(int(shave[0] / 2 * scale), int(shave[1] / 2 * scale)))
-#
-#             s_ones = torch.ones(s_w_cut_inter.shape, dtype=s_w_cut_inter.dtype)
-#             divisor = F.fold(
-#                 F.unfold(s_ones, (padsize[0] * scale - shave[0] * scale, padsize[1] * scale),
-#                          stride=(int(shave[0] / 2 * scale), int(shave[1] / 2 * scale))),
-#                 ((h - h_cut - shave[0]) * scale, padsize[1] * scale),
-#                 (padsize[0] * scale - shave[0] * scale, padsize[1] * scale),
-#                 stride=(int(shave[0] / 2 * scale), int(shave[1] / 2 * scale)))
-#             s_w_cut_inter = s_w_cut_inter.cpu() / divisor
-#
-#             s_w_cut[..., int(shave[0] / 2 * scale):(h - h_cut) * scale - int(shave[0] / 2 * scale), :] = s_w_cut_inter
-#             y_w_cut.append(s_w_cut)
-#
-#         # return y_w_cut
+def find_data_path(dataset_type, full_res):
+    if dataset_type == "wv3":
+        if not full_res:
+            path = "/volsparse1/dataset/PanCollection/test_data/test_wv3_multiExm1.h5"
+        else:
+            # path = '/home/ZiHanCao/datasets/pansharpening/wv3/full_examples/test_wv3_OrigScale_multiExm1.h5'
+            path = "/Data2/ZiHanCao/datasets/pansharpening/pansharpening_test/test_wv3_OrigScale_multiExm1.h5"
+    elif dataset_type == "cave":
+        path = "/Data2/ZiHanCao/datasets/HISI/new_cave/test_cave(with_up)x4.h5"
+    elif dataset_type == "cave_x8":
+        path = "/volsparse1/dataset/HISR/cave_x8/test_cave(with_up)x8_rgb.h5"
+    elif dataset_type == "harvard":
+        # path = "/Data2/ZiHanCao/datasets/HISI/new_harvard/test_harvard(with_up)x4_rgb.h5"
+        path = "/Data2/ShangqiDeng/data/HSI/harvard_x4/test_harvard(with_up)x4_rgb200.h5"
+    elif dataset_type == "harvard_x8":
+        path = "/volsparse1/dataset/HISR/harvard_x8/test_harvard(with_up)x8_rgb.h5"
+    elif dataset_type == "gf5":
+        if not full_res:
+            path = "/Data2/ZiHanCao/datasets/pansharpening/GF5-GF1/tap23/test_GF5_GF1_23tap_new.h5"
+        else:
+            path = "/Data2/ZiHanCao/datasets/pansharpening/GF5-GF1/tap23/test_GF5_GF1_OrigScale.h5"
+    elif dataset_type == "gf":
+        if not full_res:
+            path = "/Data2/ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5"
+        else:
+            # path = '/home/ZiHanCao/datasets/pansharpening/gf/full_examples/test_gf2_OrigScale_multiExm1.h5'
+            path = "/Data2/ZiHanCao/datasets/pansharpening/pansharpening_test/test_gf2_OrigScale_multiExm1.h5"
+    elif dataset_type == "qb":
+        if not full_res:
+            path = "/Data2/ZiHanCao/datasets/pansharpening/qb/reduced_examples/test_qb_multiExm1.h5"
+        else:
+            # path = '/home/ZiHanCao/datasets/pansharpening/qb/full_examples/test_qb_OrigScale_multiExm1.h5'
+            path = "/Data2/ZiHanCao/datasets/pansharpening/pansharpening_test/test_qb_OrigScale_multiExm1.h5"
+    elif dataset_type == "wv2":
+        if not full_res:
+            path = "/Data2/ZiHanCao/datasets/pansharpening/wv2/reduced_examples/test_wv2_multiExm1.h5"
+        else:
+            # path = '/home/ZiHanCao/datasets/pansharpening/wv2/full_examples/test_wv2_OrigScale_multiExm1.h5'
+            path = "/Data2/ZiHanCao/datasets/pansharpening/pansharpening_test/test_wv2_OrigScale_multiExm1.h5"
+    elif dataset_type == "roadscene":
+        path = "/Data2/ZiHanCao/datasets/RoadSceneFusion_1"
+    elif dataset_type == "tno":
+        path = "/Data2/ZiHanCao/datasets/TNO"
+    else:
+        raise NotImplementedError("not exists {} dataset".format(dataset_type))
+
+    return path
+
+def find_key_args_in_log(arch, sub_arch, datasets, weight_path):
+    # handle weight_path\
+    slash_with_id = re.findall(r'_[\d\D]{8}/', weight_path)[0]
+    run_id = slash_with_id[1:-1]
+    
+    if sub_arch is not None and sub_arch != '': 
+        sub_arch = '_' + sub_arch
+    else:
+        sub_arch = ''
+    _log_path = f'log_file/{arch}{sub_arch}/{datasets}/*{run_id}*/config.json'
+    log_path = glob.glob(_log_path)
+    if len(log_path) != 1:
+        raise RuntimeError(f'>>> log file: {_log_path} not exists!')
+    print(f'>>> found run id: {log_path[0]} config')
+    args = json.loads(''.join(open(log_path[0], 'r').readlines()))
+    
+    return args
+    
 
 
-def crop_inference(model: BaseModel,
+def crop_inference(model: "BaseModel",
                    xs: Tuple[Tensor, Tensor, Tensor],
                    crop_size: Tuple[int] = (16, 64, 64),
                    stride: Tuple[int] = (8, 32, 32)):

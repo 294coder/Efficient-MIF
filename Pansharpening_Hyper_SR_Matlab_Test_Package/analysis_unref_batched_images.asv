@@ -1,0 +1,20 @@
+function res = analysis_unref_batched_images(sr, ms, lms, pan, ratio, sensor)
+    addpath('./Quality_Indices/')
+    sz = size(sr);
+    bs = sz(1);
+    d_lambdas = [];
+    qnr_indices = [];
+    d_ses = [];
+    blockSize = 32;
+    res = {};
+    for i = (1: bs) 
+        sr1 = permute(squeeze(sr(i, :, :, :)), [2, 3, 1]);
+        ms1 = permute(squeeze(ms(i, :, :, :)), [2, 3, 1]);
+        lms1 = permute(squeeze(lms(i, :, :, :)), [2, 3, 1]);
+        pan1 = permute(pan(i, :, :, :))
+        [d_lambdas(i), d_ses(i), qnr_indices(i)] = indexes_evaluation_FS(sr1, lms1, pan1, 11, 0, ms1, sensor, ratio, 0);
+    end
+    res.d_lambda = [mean(d_lambdas), std(d_lambdas)];
+    res.qnr_index = [mean(qnr_indices), std(qnr_indices)];
+    res.d_s = [mean(d_ses), std(d_ses)];
+end

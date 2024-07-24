@@ -96,11 +96,13 @@ def summaries(model, grad=False):
 # summaries(model, grad=True)
 
 if __name__ == '__main__':
-    lms = torch.randn(1, 8, 256, 256).cuda(1)
-    pan = torch.randn(1, 1, 256, 256).cuda(1)
-    model = PMACNet().cuda(1)
+    lms = torch.randn(1, 4, 64, 64).cuda()
+    pan = torch.randn(1, 1, 64, 64).cuda()
+    model = PMACNet().cuda()
     out = model._forward_implem(lms, pan)
 
     print(out.shape)
     
-    # 3v08xxj4 gf2 on 2
+    # 2peiwuta qb on 2
+    
+    # y2k8paq1 gf2 on 6

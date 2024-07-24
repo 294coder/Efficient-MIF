@@ -1,0 +1,66 @@
+optimizer:
+  name: "adamw"
+  lr: !!float 1e-3
+  weight_decay: !!float 1e-6
+
+lr_scheduler:
+  #  name: 'cos_anneal'
+  #  name: 'cos_anneal_restart'
+  #  T_0: 50
+  #  T_mult: 2
+  #  eta_min: !!float 1e-9
+  #  T_max: 2000
+  #  eta_min: !!float 1e-8
+
+  # name: "plateau"
+  # mode: "min"
+  # threshold: !!float 1e-5 # l1
+  # min_lr: !!float 1e-6
+  # patience: 20
+  # factor: !!float 0.1
+  # cooldown: 5
+  # threshold_mode: "rel"
+
+  name: "multi_step"
+  milestones: [200, 1000] #[100, 800]
+  gamma: 0.2
+
+max_norm: 0.03
+ema_decay: 0.999
+
+path:
+  wv3_train_path: "/volsparse1/dataset/PanCollection/training_data/train_wv3_9714.h5"
+  wv3_val_path: "/volsparse1/dataset/PanCollection/test_data/test_wv3_multiExm1.h5"
+
+  gf2_train_path: "/volsparse1/dataset/PanCollection/training_data/train_gf2_19809.h5"
+  gf2_val_path: "/Data2/ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5"
+  #  val_path: '/home/ZiHanCao/datasets/pansharpening/gf/training_gf2/valid_gf2.h5'
+
+  qb_train_path: "/Data2/ZiHanCao/datasets/pansharpening/qb/training_qb/train_qb.h5"
+  qb_val_path: "/Data2/ZiHanCao/datasets/pansharpening/qb/reduced_examples/test_qb_multiExm1.h5"
+
+network_configs:
+  num_channels: 4
+  base_filter: 32
+
+logger_config:
+  base_path: ./log_file/
+  name: panmamba_zhouman
+  file_mode: w
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  

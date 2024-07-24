@@ -1,0 +1,113 @@
+optimizer:
+  name: "adamw"
+  lr: !!float 1e-3
+  weight_decay: !!float 1e-6
+
+lr_scheduler:
+  name: 'cos_anneal_restart_reduce'
+  T_0: 50
+  T_mult: 2
+  lr_mult: 0.9
+  eta_min: !!float 8e-5
+
+max_norm: 0.03
+ema_decay: 0.995
+
+path:
+  wv3_train_path: "/Data2/ZiHanCao/datasets/pansharpening/wv3/training_wv3/train_wv3.h5"
+  wv3_val_path: "/Data2/ZiHanCao/datasets/pansharpening/wv3/reduced_examples/test_wv3_multiExm1.h5"
+
+  gf2_train_path: "/Data2/ZiHanCao/datasets/pansharpening/gf/training_gf2/train_gf2.h5"
+  gf2_val_path: "/Data2/ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5"
+
+  qb_train_path: "/Data2/ZiHanCao/datasets/pansharpening/qb/training_qb/train_qb.h5"
+  qb_val_path: "/Data2/ZiHanCao/datasets/pansharpening/qb/reduced_examples/test_qb_multiExm1.h5"
+
+  cave_x4_train_path: "/Data2/ZiHanCao/datasets/HISI/new_cave/train_cave(with_up)x4.h5"
+  cave_x4_val_path: "/Data2/ZiHanCao/datasets/HISI/new_cave/test_cave(with_up)x4.h5"
+
+  cave_x8_train_path: "/Data2/ZiHanCao/datasets/HISI/new_cave/x8/train_cave(with_up)x8_rgb_16.h5"
+  cave_x8_val_path: "/Data2/ZiHanCao/datasets/HISI/new_cave/x8/test_cave(with_up)x8_rgb.h5"
+
+  harvard_x4_train_path: "/Data2/ZiHanCao/datasets/HISI/new_harvard/train_harvard(with_up)x4_rgb.h5"
+  harvard_x4_val_path: "/Data2/ZiHanCao/datasets/HISI/new_harvard/test_harvard(with_up)x4_rgb.h5"
+
+  harvard_x8_train_path: "/Data2/ZiHanCao/datasets/HISI/new_harvard/x8/train_harvard(with_up)x8_rgb.h5"
+  harvard_x8_val_path: "/Data2/ZiHanCao/datasets/HISI/new_harvard/x8/test_harvard(with_up)x8_rgb.h5"
+
+network_configs:
+  panMamba:
+    img_channel: 8
+    condition_channel: 1
+    out_channel: 8
+
+    # v2
+    # width: 32
+    naf_enc_blk_nums: []
+    naf_dec_blk_nums: []
+    naf_chan_upscale: []
+
+    middle_blk_nums: 1
+
+    # variant tiny
+    width: 24
+    ssm_enc_blk_nums: [2, 1, 1]
+    ssm_dec_blk_nums: [2, 1, 1]
+    ssm_chan_upscale: [2, 1, 1]
+    ssm_ratios: [2,2,2]
+    window_sizes: [8,8,null]
+    ssm_enc_d_states: [[16, 32], [16, 32], [null, 32]]
+    ssm_dec_d_states: [[null, 32], [16, 32], [16, 32]]
+    ssm_enc_convs: [[7, 11], [7, 11], [null, 11]]
+    ssm_dec_convs: [[null, 11], [7, 11], [7, 11]]
+    drop_path_rate: 0.1
+
+    # small
+    # ssm_enc_blk_nums: [2,2,2]
+    # ssm_dec_blk_nums: [2,2,2]
+    # ssm_chan_upscale: [1,2,2]
+    # ssm_ratios: [3,2,2]
+    # window_sizes: [8,8,null]
+    # ssm_enc_d_states: [[32, 32], [32, 32], [null, 32]]
+    # ssm_dec_d_states: [[null, 32], [32, 32], [32, 32]]
+    # ssm_enc_convs: [[7, 11], [7, 11], [null, 11]]
+    # ssm_dec_convs: [[null, 11], [7, 11], [null, 11]]
+    # drop_path_rate: 0.2
+
+    # base
+    # ssm_enc_blk_nums: [4, 3, 2]
+    # ssm_dec_blk_nums: [4, 3, 2]
+    # ssm_chan_upscale: [1, 1, 1]
+    # ssm_ratios: [2,2,1]
+    # window_sizes: [8,8,null]
+    # ssm_enc_d_states: [[16, 32], [16, 32], [null, 32]]
+    # ssm_dec_d_states: [[null, 32], [16, 32], [16, 32]]
+    # ssm_enc_convs: [[7, 11], [7, 11], [null, 11]]
+    # ssm_dec_convs: [[null, 11], [7, 11], [7, 11]]
+    # drop_path_rate: 0.2
+
+    if_abs_pos: no # buggy: convergence is slow
+    if_rope: no
+    patch_merge: yes
+    upscale: 4
+
+  panMamba_only_NAF:
+    img_channel: 8
+    condition_channel: 1
+    out_channel: 8
+    width: 32
+    naf_enc_blk_nums: [2, 2, 2]
+    naf_dec_blk_nums: [2, 2, 2]
+    naf_chan_upscale: [2, 2, 2]
+    middle_blk_nums: 2
+
+    if_abs_pos: no # buggy: convergence is slow
+    if_rope: no
+    patch_merge: yes
+    upscale: 4
+
+
+logger_config:
+  base_path: ./log_file/
+  name: LEMamba
+  file_mode: w

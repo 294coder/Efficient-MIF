@@ -12,6 +12,8 @@ import torchvision.transforms.functional as tf
 from torch.autograd import Variable
 from torch.nn import init
 
+import sys
+sys.path.append("./")
 from model.base_model import BaseModel, register_model
 
 ###############################
@@ -797,14 +799,14 @@ class LPNet(nn.Module):
 
      ############################################test###############################################################
 
-# if __name__ == "__main__":
+if __name__ == "__main__":
     
-#     MS = torch.ones([16, 8, 4, 4])
-#     PAN = torch.ones([16, 1, 16, 16])
-#     lpnet = LPNet(12, 16, 24)
-#     y = lpnet(MS, PAN) #list
-#     print(type(y), len(y))
-#     print(y[2].shape)
+    MS = torch.ones([16, 8, 4, 4])
+    PAN = torch.ones([16, 1, 16, 16])
+    lpnet = LPNet(12, 16, 24)
+    y = lpnet(MS, PAN) #list
+    print(type(y), len(y))
+    print(y[2].shape)
 
 
 # #############################################################################
@@ -1130,12 +1132,13 @@ class GPPNN(BaseModel):
 if __name__ == '__main__':
     from functools import partial
     from fvcore.nn import FlopCountAnalysis, flop_count_table
-    import time
+    
+    torch.cuda.set_device(1)
     
     net = GPPNN(8, 1, 32, 8).cuda()
     
-    ms = torch.randn(32, 8, 16, 16).cuda()
-    pan = torch.randn(32, 1, 64, 64).cuda()
+    ms = torch.randn(4, 8, 64, 64).cuda()
+    pan = torch.randn(4, 1, 256, 256).cuda()
     
     # print(net(ms, pan).shape)
     
@@ -1143,24 +1146,13 @@ if __name__ == '__main__':
         return self._forward_implem(*args, **kwargs)
     
     net.forward = partial(forward, net)
-    avg = 0.
-    for n in range(20):
-        s = time.time()
-        net(ms, pan)
-        e = time.time()
-        avg += e - s
-        
-    print(avg/20)
+    
+    print(
+        flop_count_table(FlopCountAnalysis(net, (ms, pan)))
+    )
     
     
     
-    
-    # print(
-    #     flop_count_table(FlopCountAnalysis(net, (ms, pan)))
-    # )
-    
-    
-    
-    # 2xaxu8k3
+
     
 

@@ -1,0 +1,38 @@
+optimizer:
+  name: 'adamw'
+  lr: !!float 1e-3
+  weight_decay: !!float 1e-6
+
+lr_scheduler:
+  name: 'multi_step'
+  milestones: [100, 1000]
+  gamma: 0.1
+#   name: 'identity'
+
+max_norm: null
+
+path:
+  # train_path: '/media/office-401-remote/Elements SE/cao/ZiHanCao/datasets/pansharpening/wv3/training_wv3/train_wv3.h5'
+  # val_path: '/media/office-401-remote/Elements SE/cao/ZiHanCao/datasets/pansharpening/wv3/reduced_examples/test_wv3_multiExm1.h5'
+  # train_path: "/media/office-401-remote/Elements SE/cao/ZiHanCao/datasets/HISI/new_cave/train_cave(with_up)x4.h5"
+  # val_path: "/media/office-401-remote/Elements SE/cao/cavex4/test_cavepatches64-2.h5"
+
+  train_path: "/media/office-401/Elements SE/cao/ZiHanCao/datasets/HISI/data_Pavia/Train_Pavia.h5"
+  val_path: "/media/office-401/Elements SE/cao/ZiHanCao/datasets/HISI/data_Pavia/Test_Pavia.h5"
+
+  # train_path: "/media/office-401/Elements SE/cao/ZiHanCao/datasets/HISI/data_Botswana/Train_Botswana.h5"
+  # val_path: "/media/office-401/Elements SE/cao/ZiHanCao/datasets/HISI/data_Botswana/Test_Botswana.h5"
+
+
+
+network_configs:
+  ms_channels: 102 #145 #128
+  pan_channels: 1 #3
+  n_feat: 64
+  n_layer: 8
+
+
+logger_config:
+  base_path: ./log_file/
+  name: gppnn_cvpr
+  file_mode: w

@@ -1,51 +1,52 @@
 # import os
 # import importlib
 
-from model.build_network import build_network
-from model.base_model import MODELS
+import warnings
+warnings.filterwarnings("ignore", module="torch.utils")
+warnings.filterwarnings("ignore", module="deepspeed.accelerator")
 
+# from model.build_network import build_network
+from model.base_model import MODELS, BaseModel
+
+# TODO: hydra import
 # ==============================================
 # register all models
-from model.DCFNet import DCFNet
-from model.FusionNet import FusionNet
-from model.PANNet import VanillaPANNet
-# from model.M3DNet import M3DNet
-# from model.panformer import PanFormerGAU, PanFormerUNet2, PanFormerSwitch, PanFormerUNet, PanFormer
-# from model.dcformer import DCFormer
-# from model.dcformer_dpw import DCFormer_DPW
-# from model.dcformer_dpw_woo import DCFormer_DPW_WOO
-# from model.dcformer_dynamic import DCFormerDynamicConv
-# from model.dcformer_reduce import DCFormer_Reduce
-# from model.dcformer_mwsa import DCFormerMWSA
-from model.dcformer_mwsa_wx import DCFormerMWSA
-# from model.fuseformer import MainNet
-# from model.dcformer_reduce_c_64 import DCFormer_Reduce_C64
-# from model.dcformer_reduce_c_32_tmp import DCFormer_Reduce_C32
-# from model.dcformer_sg_c32 import DCFormer_SG_C32
-# from model.dcformer_mobile_x8 import DCFormerMobile
-# from model.ydtr import MODEL as YDTR
-# from model.CSSNet import Our_netf
-# from model.mmnet import MMNet
-# from model.pmacnet import PMACNet
+from .LEMamba import LEMambaNet
 
-# ablation
-# from model.dcformer_abla_only_channel_attn import DCFormer_XCA
-# from model.dcformer_abla_only_mwa import DCFormerOnlyMWA
-# from model.dcformer_abla_only_cross_branch_mwsa import DCFormerOnlyCrossBranchMWSA
 
-# disscussion
-# from model.dcformer_disscuss_mog_fusion_head import DCFormerMWSAMoGFusionHead
+import importlib
+import sys
+import torch
 
-# others
-from model.GPPNN import GPPNN
+sys.path.append('./')
 
-# file_p = os.path.dirname(__file__)
-# model_ps = os.listdir(file_p)
-# model_ps.remove('base_model.py')
-# model_ps.remove('__init__.py')
-#
-# _all_models = [
-#     importlib.import_module('model.' + p[:-3])
-#     for p in model_ps if p.endswith('.py')
-# ]
+# FIXME: may cause conficts with other arguments in args that rely on static registered model name in main.py
+def import_model_from_name(name):
+    module = importlib.import_module(name, package='model')
+    model_cls = getattr(module, name)
+    return model_cls
+
+def build_network(model_name:str=None, **kwargs) -> BaseModel:
+    assert model_name is not None, 'model_name is not specified'
+    try:
+        net = MODELS.get(model_name)
+    except:
+        try:
+            net = import_model_from_name(model_name)
+        except:
+            net = MODELS.get(model_name.split('.')[-1])
+        
+    assert net is not None, f'no model named {model_name} is registered'
+    # import networks
+    return net(**kwargs)
+
+
+import hydra
+from omegaconf import OmegaConf
+
+def build_model_from_name(cfg: OmegaConf):
+    model = hydra.utils.instantiate(cfg)
+    
+    return model
+
 # ==============================================

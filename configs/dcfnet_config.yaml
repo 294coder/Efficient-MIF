@@ -9,13 +9,15 @@ lr_scheduler:
   gamma: 0.1
 #  name: 'identity'
 
-max_norm: null
+max_norm: 0.3
 
 path:
 #   train_path: '/home/ZiHanCao/datasets/pansharpening/wv3/training_wv3/train_wv3.h5'
 #   val_path: '/home/ZiHanCao/datasets/pansharpening/wv3/training_wv3/valid_wv3.h5'
-  train_path: "/media/office-401/Elements SE/cao/ZiHanCao/datasets/HISI/new_cave/train_cave(with_up)x4.h5"
-  val_path: "/media/office-401/Elements SE/cao/ZiHanCao/datasets/HISI/new_cave/test_cave(with_up)x4.h5"
+#  train_path: "/home/ZiHanCao/datasets/HISI/new_cave/train_cave(with_up)x4.h5"
+#  val_path: "/home/ShangqiDeng/data/HSI/cave_x4/test_cavepatches64-2.h5"
+  train_path: "/Data2/ZiHanCao/datasets/HISI/new_cave/train_cave(with_up)x4.h5"
+  val_path: "/Data2/ZiHanCao/datasets/HISI/new_cave/test_cave(with_up)x4.h5"
 #   train_path: '/home/ZiHanCao/datasets/pansharpening/qb/training_qb/train_qb.h5'
 #   val_path: '/home/ZiHanCao/datasets/pansharpening/qb/training_qb/valid_qb.h5'
 #  train_path: '/home/ZiHanCao/datasets/pansharpening/gf/training_gf2/train_gf2.h5'
@@ -24,7 +26,6 @@ path:
 network_configs:
   spectral_num: 31
   mode: 'C'
-  patch_merge: no
 
 
 logger_config:
