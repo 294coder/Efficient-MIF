@@ -1,15 +1,14 @@
 from collections import OrderedDict
 from functools import partial
 
+import os
 import h5py
 import numpy as np
 import torch
 import torch.utils.data as data
 import tqdm
 from scipy.io import savemat
-import torch_inference_on_fusion
 
-from task_datasets.TNO import TNODataset
 from task_datasets.WV3 import WV3Datasets
 from task_datasets.HISR import HISRDatasets
 from task_datasets.GF2 import GF2Datasets
@@ -29,9 +28,9 @@ from model import build_network
 device = "cuda:1"
 if device != 'cpu':
     torch.cuda.set_device(device)
-dataset_type = "wv3"
+dataset_type = "gf2"
 save_format = "mat"
-full_res = True
+full_res = False
 split_patch = True
 patch_size = 64
 ergas_ratio = 4
@@ -41,7 +40,7 @@ patch_size_list = [
     patch_size,
     patch_size,
 ]  # ms, lms, pan
-save_mat = True
+save_mat = False
 loop_func = (
     partial(
         ref_for_loop,
@@ -59,9 +58,9 @@ loop_func = (
         sensor=dataset_type,
     )
 )
-name = "panRWKV"
-subarch = "v3"
-load_from_logs = True
+name = "LEMamba"
+subarch = ""
+load_from_logs = False
 dl_bs = 1
 crop_bs = 6
 
@@ -90,6 +89,14 @@ print("=" * 90)
 
 # ========================================================
 
+# ===============GF checkpoint=====================
+# p = './weight/lformer_3dvlsog6.pth'  # lformer swin
+# p = './weight/lformer_R_2nj70ua7.pth'  # lformer reduced
+# p = './weight/lformer_R_150ksqcw.pth'
+
+# p = './weight/panMamba_7w0ezc23.pth'  # panMamba (mamba in mamba)
+# =================================================
+
 # ================HISI CAVE checkpoint=============
 ##### cave_x4
 # p = './weight/lformer_3k98ra6i.pth'   # lformer_swin
@@ -98,43 +105,16 @@ print("=" * 90)
 
 
 ####### cave_x8
-# p = "./weight/dcformer_15g03tzt.pth"  # 10->80
-# p = "./weight/dcformer_3n8ejb6g.pth"  # 16->96
-# p = './weight/dcformer_2avwr28h.pth'  # dcformer mwsa 16->96
-# p = './weight/dcformer_1dxkpbs2.pth'  # dcformer_mwsa ghost module 16->128 block_list [4, [6, 3], [6, 3, 2]]
-# p = "./weight/dcformer_21updqvy/ep_1110.pth"  # dcformer_mwsa (r)
-
-# p = "./weight/dcformer_3e77ot3s.pth"  # dcformer new arch wx c_attn legacy
-# p = './weight/dcformer_1gx5sc1l.pth'  # dcformer 8 CAttn
-
-# p = './weight/dcformer_2hwz3dgf.pth'
-
 # p = './weight/panMamba_2qvtefv8.pth'  # panMamba
 # p = '/Data2/ZiHanCao/exps/panformer/weight/2024-04-05-05-30-15_panMamba_307kosza/ep_760/best_model.pth'
 # p = '/Data2/ZiHanCao/exps/panformer/weight/2024-04-08-13-33-03_panMamba_3d8t0rg1/panMamba_3d8t0rg1.pth'
 
-# p = './weight/MIMO_SST_d02s63w5.pth'  # MIMO_SST net
-
 ##### harvard_x8
-# p = "./weight/dcformer_zeavxkwx.pth"  # dcformer_mwsa ghost module
-# p = './weight/dcformer_22hf3ncx.pth'  # retrain
-
-# p = './weight/dcformer_3rwfkdra.pth'  # dcformer new arch wx c_attn legacy low psnr
-# p = './weight/dcformer_dkwinunx.pth'  # dcformer 8 CAttn
 
 # p = './weight/panMamba_1wotinai.pth'  # panMamba
 
-# p = './weight/MIMO_SST_pfjp3ssl.pth'  # MIMO_SST net
-
 # =================================================
 
-# ===============GF checkpoint=====================
-# p = './weight/lformer_3dvlsog6.pth'  # lformer swin
-# p = './weight/lformer_R_2nj70ua7.pth'  # lformer reduced
-# p = './weight/lformer_R_150ksqcw.pth'
-
-# p = './weight/panMamba_7w0ezc23.pth'  # panMamba (mamba in mamba)
-# =================================================
 
 
 if dataset_type == "wv3":
@@ -206,10 +186,6 @@ elif dataset_type in ["cave_x4", "harvard_x4", "cave_x8", "harvard_x8", "gf5"]:
 elif dataset_type == "gf2":
     d = h5py.File(path)
     ds = GF2Datasets(d, full_res=full_res)
-elif dataset_type == "roadscene":
-    ds = RoadSceneDataset(path, "test", no_split=False)
-elif dataset_type == "tno":
-    ds = TNODataset(path, "test", no_split=False)
 else:
     raise NotImplementedError
 dl = data.DataLoader(ds, batch_size=dl_bs)
@@ -279,4 +255,3 @@ if save_mat:  # torch.tensor(d['sr'][:, [4,2,0]]),  torch.tensor(d['gt'][:, [4,2
         save_file.close()
     print(f"save results in {path}")
 # -----------------------------------------------------
-c

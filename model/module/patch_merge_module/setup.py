@@ -1,22 +1,3 @@
-# from setuptools import setup, Extension
-# from Cython.Build import cythonize
-# import sys
-
-# python_version = f"{sys.version_info.major}{sys.version_info.minor}"
-# print(f"Python version: {python_version}")
-
-
-# module_name = f"PatchMergeModule_py{python_version}"
-
-# extensions = [
-#     Extension(module_name, ["PatchMergeModule.py"]),
-# ]
-
-# setup(
-#     name=module_name,
-#     ext_modules=cythonize(extensions),
-# )
-
 from setuptools import setup
 from Cython.Build import cythonize
 from pathlib import Path

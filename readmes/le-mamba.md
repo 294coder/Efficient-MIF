@@ -25,10 +25,23 @@ Mamba, as a state space model, has emerged in the field of natural language proc
 </html>
 
 # Model
-We implement LE-Mamba with Pytorch and you can find it at `model/panMamba.py`.
+We implement LE-Mamba with Pytorch and you can find it at [`model/LEMamba.py`](../model/LEMamba.py).
 
 ## Traning
-Train the model by running the following commands:
+To train the model, you should first compile the `select_scan` operator by running the following command:
+
+```shell
+cd model/module/mamba_scan
+pip install -e .
+```
+
+Then, you should run the following command to test the model if it is correctly installed:
+
+```shell
+pytest model/test/LEMamba_test.py
+```
+
+If the test is passed, you can start training the model by running the following commands:
 
 ```shell
 CUDA_VISIBLE_DEVICES="0" \
@@ -47,18 +60,17 @@ accelerate_main.py \
 --comment "panRWKV config on wv3 dataset model" \
 --log_metric \
 --logger_on \
-
 ```
 
 > check the `model/__init__.py` if the LE-Mamba network is not registered.
 
-Checkpoints and logs will be saved at `log_file/` and Tensorboard logs will be saved at `runs/`.
+Checkpoints, running, and Tensorboard logs will be saved at `log_file/`.
 
 ## Testing
 
+You can refer to the testing script [`torch_inference_on_sharpening.py`](../torch_inference_on_sharpening.py) to test the model.
 
-
-Follow the main guidance in [`README.md`](../README.md).
+To test the metrics, please see the main guidance in [`README.md`](../README.md).
 
 For sharpening tasks (including pansharpening and HMIF tasks), you simply test the metrics in Matlab:
 ``` matlab
@@ -69,18 +81,18 @@ cd Pansharpening_Hyper_SR_Matlab_Test_Package
 % path: the saved fused image `.mat` file, find it in `visualized_img/`
 % ratio: upscale ratio, e.g., 4
 % full_res: we keep it to 1, not changed
-% const: max value of the dataset
+% const: max value of the dataset (WV3: 2047, GF2: 1023, CAVE x8: 1, Harvard x8: 1)
 analysis_ref_batched_images(path, ratio, full_res, const)
 
 %% when testing full-resolution metrics on pansharpening datasets
 % Args:
 % path: the saved fused image `.mat` file, find it in `visualized_img/`
 % ratio: upscale ratio, e.g., 4
-% sensor: the sensor name
+% sensor: the sensor name ('WV3', 'GF2', 'CAVE', 'Harvard')
 analysis_unref_batched_images(path, ratio, sensor)
 ```
 
-# Performances
+<!-- # Performances
 LE-Mamba reaches SOTA performances on widely-used Pansharpening and HMIF datasets. Here are some metrics:
 
 <html>
@@ -92,7 +104,7 @@ LE-Mamba reaches SOTA performances on widely-used Pansharpening and HMIF dataset
         <img src="figs/le-mamba-HMIF.png" alt="Image 1" width="100%">
     </div>
 </body>
-</html>
+</html> -->
 
 # Citation
 If you find this work useful, please consider citing:

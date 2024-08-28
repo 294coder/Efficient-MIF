@@ -18,8 +18,6 @@ from deepspeed.runtime.zero import GatheredParameters
 import sys
 sys.path.append('./')
 from utils.misc import is_main_process
-from utils.deepspeed_ema import DeepspeedEMA
-# from utils.utils_modules import Adam_mini
 
 
 class IdentityScheduler(torch.optim.lr_scheduler._LRScheduler):

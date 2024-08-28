@@ -18,7 +18,7 @@ warnings.filterwarnings("ignore", module="deepspeed.accelerator")
 
 
 ## register all models
-from model.base_model import MODELS, BaseModel
+from model.base_model import MODELS, BaseModel, PatchMergeModule
 from utils import easy_logger
 
 logger = easy_logger(func_name='model_registry')
@@ -31,11 +31,11 @@ __all__ = [
 ]
 
 _all_modules = [
-    
+    'LEMamba'
 ]
 
 _all_model_class_name = [
-    
+    'LEMambaNet'
 ]
 
 assert len(_all_modules) == len(_all_model_class_name), 'length of modules and registry names should be the same'
