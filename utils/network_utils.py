@@ -171,6 +171,29 @@ def step_loss_backward(
                 
         if not grad_accum:
             optim.step()
+            
+def find_no_or_big_norm_params(net: nn.Module, ktop: int=20):
+    """find unused params and big-normed gradient
+
+    Args:
+        net (nn.Module): network to be checked.
+        ktop (int, optional): top k params to be printed. Defaults to 20.
+    """
+    # find unused params and big-normed gradient
+    d_grads = {}
+    n_params = 0
+    for n, p in net.named_parameters():
+        n_params += p.numel()
+        if p.grad is None:
+            print(n, "has no grad")
+        else:
+            p_sum = torch.abs(p.grad).sum().item()
+            d_grads[n] = p_sum
+
+    # topk
+    d_grads = dict(sorted(d_grads.items(), key=lambda item: item[1], reverse=True))
+    for k, v in list(d_grads.items())[:ktop]:
+        print(k, v)
 
 
 class EMAModel(object):

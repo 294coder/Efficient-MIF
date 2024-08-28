@@ -2,6 +2,7 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader
 import sys
+import importlib
 import accelerate
 from accelerate.utils import set_seed, gather_object, gather
 from accelerate import Accelerator
@@ -14,7 +15,7 @@ from model import build_network
 from utils import AnalysisVISIRAcc, EasyProgress, easy_logger
 from utils.train_utils import get_eval_dataset
 from utils.load_params import module_load
-from task_datasets import WindowBasedPadder
+from utils.misc import WindowBasedPadder
 
 # logger
 from utils import LoguruLogger, y_pred_model_colored
@@ -35,17 +36,21 @@ def ascii_tensor_to_string(ascii_tensor):
 
 def get_args():
     parser = ArgumentParser()
-    parser.add_argument('--arch', type=str, default='panRWKV')
+    parser.add_argument('-c', '--config-file', type=str, default=None, help='config file path')
+    parser.add_argument('-m', '--model-class', type=str, default=None, help='model class name')
+    parser.add_argument('--arch', type=str, default=None)
     parser.add_argument('--sub-arch', type=str, default=None)
     parser.add_argument('--dataset', type=str, default='tno')
     parser.add_argument('--val-bs', type=int, default=2)
     parser.add_argument('--model-path', type=str, required=True)
+    parser.add_argument('--load-spec-key', type=str, default=None)
     parser.add_argument('--reduce-label', action='store_true', default=False)
     parser.add_argument('--dataset-mode', type=str, default='test', choices=['test', 'detection'])
     parser.add_argument('--save-path', type=str, default='visualized_img/')
     parser.add_argument('--extra-save-name', type=str, default='')
     parser.add_argument('--only-y', action='store_true', default=False)
     parser.add_argument('--debug', action='store_true', default=False, help='debug mode')
+    parser.add_argument('--analysis-fused', action='store_true', default=False, help='analysis fused image')
     
     args = parser.parse_args()
     
@@ -53,10 +58,19 @@ def get_args():
     conf = OmegaConf.create(args.__dict__)
     
     # load network config
-    conf.full_arch = args.arch + "_" + args.sub_arch if args.sub_arch is not None else args.arch
-    conf.network_configs_path = Path('configs') / f'{conf.arch}_config.yaml'
-    yaml_cfg = OmegaConf.load(conf.network_configs_path)
-    conf.network_configs = getattr(yaml_cfg['network_configs'], conf.full_arch, yaml_cfg['network_configs'])
+    # old model loadding
+    if args.model_class is None:
+        conf.full_arch = args.arch + "_" + args.sub_arch if args.sub_arch is not None else args.arch
+        conf.network_configs_path = Path('configs') / f'{conf.arch}_config.yaml'
+        yaml_cfg = OmegaConf.load(conf.network_configs_path)
+        conf.network_configs = getattr(yaml_cfg['network_configs'], conf.full_arch, yaml_cfg['network_configs'])
+    # new model loadding
+    else:
+        assert args.config_file is not None, 'config file should be provided'
+        yaml_cfg = OmegaConf.load(args.config_file)
+        model_init_kwargs = getattr(yaml_cfg.network_configs, args.model_class, yaml_cfg.network_configs)
+        conf.full_arch = conf.model_class.replace('.', '_')
+        conf.network_configs = model_init_kwargs
     
     # dataset and save path config
     conf.dataset = conf.dataset.lower()
@@ -93,8 +107,15 @@ def inference_main(args):
         val_dl = DataLoader(val_ds, batch_size=args.val_bs, shuffle=False)
     
     # model config
-    network = build_network(args.full_arch, **args.network_configs)
-    network = module_load(args.model_path, network, device=device, spec_key='shadow_params')
+    if args.model_class is None:
+        network = build_network(args.full_arch, **args.network_configs)
+    else:
+        logger.info(f'loading model from class: {args.model_class} with config file: {args.config_file}')
+        _module_name, _class_name = args.model_class.split('.')
+        _module = importlib.import_module(_module_name, package='model')
+        network = getattr(_module, _class_name)(**dict(args.network_configs, ))
+        
+    network = module_load(args.model_path, network, device=device, spec_key=args.load_spec_key)
     
     analysor = AnalysisVISIRAcc()
     padder = WindowBasedPadder(32)
@@ -137,7 +158,8 @@ def inference_main(args):
                 fused = network(vis_y, ir, mask, mode='fusion_eval')#, ret_seg_map=False)
                 fused = back_to_rgb(fused)
             fused = padder.inverse(fused)
-            analysor(gt, fused)
+            if args.analysis_fused:
+                analysor(gt, fused)
     
             # save figs
             if use_ddp:

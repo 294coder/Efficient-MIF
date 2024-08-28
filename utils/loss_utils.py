@@ -1,6 +1,6 @@
 from functools import partial
 import random
-from typing import Sequence, Union
+from typing import Sequence, Union, TYPE_CHECKING
 from einops import reduce
 from contextlib import contextmanager
 import kornia
@@ -18,12 +18,13 @@ from deepinv.loss import TVLoss
 import sys
 
 sys.path.append('./')
-from model.base_model import BaseModel
 from utils.misc import is_main_process, exists, default, rgb_to_ycbcr, ycbcr_to_rgb
 from utils.torch_dct import dct_2d, idct_2d
 from utils.vgg import vgg16
 from utils._ydtr_loss import ssim_loss_ir, ssim_loss_vi, sf_loss_ir, sf_loss_vi
 from utils.log_utils import easy_logger
+if TYPE_CHECKING:
+    from model.base_model import BaseModel
 
 logger = easy_logger()
 
@@ -262,10 +263,18 @@ def ave_ep_loss(ep_loss_dict: dict, ep_iters: int):
     return ep_loss_dict
 
 @is_main_process  
-def ave_multi_rank_dict(rank_loss_dict: list[dict]):
-    ave_dict = {}
+def ave_multi_rank_dict(rank_loss_dict: "list[dict] | dict"):
+    # type is dict is only one process
+    assert isinstance(rank_loss_dict, (list, dict)), 'rank_loss_dict must be a list or a dict'
+    
+    if isinstance(rank_loss_dict, dict):
+        return rank_loss_dict
+    
     n = len(rank_loss_dict)
-    assert n >= 1, "@rank_loss_dict must have at least one element"
+    if n == 1:
+        return rank_loss_dict[0]
+        
+    ave_dict = {}
     keys = rank_loss_dict[0].keys()
 
     for k in keys:
@@ -1076,7 +1085,7 @@ def YCbCr2RGB(Y, Cb, Cr):
 
 
 class SobelOp(nn.Module):
-    def __init__(self):
+    def __init__(self, in_c=3, out_c=3):
         super(SobelOp, self).__init__()
         kernelx = [[-1, 0, 1],
                   [-2, 0, 2],
@@ -1084,14 +1093,16 @@ class SobelOp(nn.Module):
         kernely = [[1, 2, 1],
                   [0, 0, 0],
                   [-1, -2, -1]]
-        kernelx = torch.FloatTensor(kernelx).unsqueeze(0).unsqueeze(0)
-        kernely = torch.FloatTensor(kernely).unsqueeze(0).unsqueeze(0)
+        kernelx = torch.tensor(kernelx, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
+        kernely = torch.tensor(kernely, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
+        kernelx = kernelx.repeat(out_c, 1, 1, 1)
+        kernely = kernely.repeat(out_c, 1, 1, 1)
         self.register_buffer('weightx', kernelx)
         self.register_buffer('weighty', kernely)
         
     def forward(self,x):
-        sobelx=F.conv2d(x, self.weightx, padding=1)
-        sobely=F.conv2d(x, self.weighty, padding=1)
+        sobelx=F.conv2d(x, self.weightx, padding=1, groups=x.size(1))
+        sobely=F.conv2d(x, self.weighty, padding=1, groups=x.size(1))
         
         # sobel_xy = torch.abs(sobelx)+torch.abs(sobely)
         
@@ -1112,7 +1123,11 @@ class DRMFFusionLoss(nn.Module):
                  pseudo_l1_const=1.4e-3,
                  correlation_loss: bool=False,
                  reduce_label: bool=True,
+                 color_loss: bool=True,
                  color_loss_bg_masked: bool=False,
+                 grad_op: str='sobel',
+                 grad_only_on_Y: bool=True,
+                 prior: str='mean',
                  weight_dict: dict=None):
         super(DRMFFusionLoss, self).__init__()
         self.latent_weighted = latent_weighted
@@ -1121,7 +1136,10 @@ class DRMFFusionLoss(nn.Module):
         self.tv = tv_loss
         self.correlation = correlation_loss
         self.reduce_label = reduce_label
+        self.color_loss = color_loss
         self.color_loss_bg_masked = color_loss_bg_masked
+        self.prior = prior
+        self.grad_only_on_Y = grad_only_on_Y
         logger.info(f'{__class__.__name__}: color loss performs [green]{"only on background" if color_loss_bg_masked else "on the whole image"}[/green]')
         
         self.loss_func = nn.L1Loss(reduction='none') if pseudo_l1_const == 0 else \
@@ -1129,7 +1147,13 @@ class DRMFFusionLoss(nn.Module):
         main_loss = 'l1 loss' if pseudo_l1_const == 0 else 'pseudo l2 loss'
         
         if grad_loss:
-            self.sobelconv = SobelOp()
+            if grad_op == 'sobel':
+                in_c = out_c = 1 if grad_only_on_Y else 3
+                self.grad_op = SobelOp(in_c, out_c)
+            elif grad_op == 'kgrad':
+                self.grad_op = spatial_gradient
+            else:
+                raise ValueError('grad_op should be sobel or kgrad')
         if ssim_loss:
             self.ssim_func = SSIMLoss()
         if tv_loss:
@@ -1147,20 +1171,25 @@ class DRMFFusionLoss(nn.Module):
             self.register_buffer('kernel', feature_grad_kernel)
 
         self.weight_dict = default(weight_dict, {
-                                                    'fusion_gt': 1,
-                                                    'inten_f_joint': 2,
-                                                    'inten_f_ir': 4,
-                                                    'inten_f_vi': 2,
-                                                    'color_f_cb': 2,
-                                                    'color_f_cr': 2,
-                                                    'grad_f_joint': 4,
-                                                    'ssim_f_joint': 0.6,
-                                                    'tv_f': 0.1,
-                                                    'crr_f': 0.02,
+                                                    'fusion_gt': 60,
+                                                    'inten_f_joint': 20,
+                                                    'inten_f_ir': 40,
+                                                    'inten_f_vi': 20,
+                                                    'color_f_cb': 20,
+                                                    'color_f_cr': 20,
+                                                    'grad_f_joint': 40,
+                                                    'grad_f_ir': 30,
+                                                    'grad_f_vi': 30,
+                                                    'ssim_f_joint': 6,
+                                                    'tv_f': 1,
+                                                    'crr_f': 0.2,
                                                 })
         
-        logger.info(f'Latent weighted: {latent_weighted}, TV loss: {tv_loss}, grad loss: {grad_loss}, SSIM loss: {ssim_loss}, correlation loss: {correlation_loss}')
+        logger.info(f'Latent weighted: {latent_weighted}, TV loss: {tv_loss}, ' + \
+                    f'grad loss: {grad_loss}, SSIM loss: {ssim_loss}, color loss: {color_loss}, ' + \
+                    f'correlation loss: {correlation_loss}')
         logger.info(f'main loss: {main_loss}')
+        logger.info(f'weight dict: {self.weight_dict}')
     
     @staticmethod
     def pseudo_l2_loss(img1, img2, c):
@@ -1225,6 +1254,18 @@ class DRMFFusionLoss(nn.Module):
             else:
                 _asserts(t, dtype, device)
                 
+    def split_boundary_gt_tensor(self, boundary_gt: Tensor):
+        assert boundary_gt.size(1) in [2, 4, 6], "The channel of the boundary_gt should be 2, 4, or 6."
+        
+        if boundary_gt.size(1) == 2:
+            ir, vi = boundary_gt[:, 1:], boundary_gt[:, :1]
+        elif boundary_gt.size(1) == 4:
+            ir, vi = boundary_gt[:, 3:], boundary_gt[:, :3]
+        else:
+            ir, vi = boundary_gt[:, 3:], boundary_gt[:, :3]
+        
+        return ir, vi
+
     def forward(self,
                 img_fusion: Tensor,
                 boundary_gt: "Tensor | tuple",  # cat([vi, ir]) or tuple(vis, ir)
@@ -1254,11 +1295,13 @@ class DRMFFusionLoss(nn.Module):
         if isinstance(boundary_gt, tuple):
             img_B, img_A = boundary_gt
         else:
-            img_A, img_B = boundary_gt[:, 3:], boundary_gt[:, :3]
+            img_A, img_B = self.split_boundary_gt_tensor(boundary_gt)
             
         # if has gt (e.g., when we train model on multi-exposure image fusion task)
         if exists(fusion_gt):
-            loss_fusion += wd['fusion_gt'] * self.loss_func(img_fusion, fusion_gt)
+            gt_loss = wd['fusion_gt'] * self.loss_func(img_fusion, fusion_gt).mean()
+            loss['gt_loss'] = gt_loss
+            loss_fusion += gt_loss
             
         # ir, vi
         img_A, img_B = self.check_rgb(img_A), self.check_rgb(img_B)
@@ -1276,7 +1319,10 @@ class DRMFFusionLoss(nn.Module):
         Y_fusion, Cb_fusion, Cr_fusion = RGB2YCrCb(img_fusion)
         Y_A, Cb_A, Cr_A = RGB2YCrCb(img_A)  # ir
         Y_B, Cb_B, Cr_B = RGB2YCrCb(img_B)  # vi
-        Y_joint = torch.max(Y_A, Y_B)
+        if self.prior == 'max':
+            Y_joint = torch.max(Y_A, Y_B)
+        else:
+            Y_joint = (Y_A + Y_B) / 2
         
         ## intensity and color loss
         if mask is not None:
@@ -1291,37 +1337,50 @@ class DRMFFusionLoss(nn.Module):
             # 1. || (1-mask) * fusion_Cb - (1-mask) * ir_Cb ||          ir_Cb loss
             # 2. || (1-mask) * fusion_Cr - (1-mask) * ir_Cr ||          ir_Cr loss
             if self.color_loss_bg_masked:
-                bg_mask = 1 - mask2
+                bg_mask = 1. - mask2
             else:
                 bg_mask = torch.ones_like(mask2)
-            loss_color = wd['color_f_cb'] * vi_w * self.loss_func(Cb_fusion * (1 - mask2), Cb_B * (1 - mask2)) + \
-                         wd['color_f_cr'] * ir_w * self.loss_func(Cr_fusion * (1 - mask2), Cr_B * (1 - mask2))
+            if self.color_loss:
+                loss_color = wd['color_f_cb'] * vi_w * self.loss_func(Cb_fusion * bg_mask, Cb_B * bg_mask) + \
+                             wd['color_f_cr'] * ir_w * self.loss_func(Cr_fusion * bg_mask, Cr_B * bg_mask)
         else:
             loss_intensity = wd['inten_f_joint'] * self.loss_func(Y_fusion, Y_joint) + \
                              wd['inten_f_ir'] * ir_w * self.loss_func(Y_fusion, Y_A) + \
                              wd['inten_f_vi'] * vi_w * self.loss_func(Y_fusion, Y_B)
                              
-            # loss_intensity = 10 * ir_w * self.loss_func(Y_fusion, Y_A) + \
-            #                  10 * vi_w * self.loss_func(Y_fusion, Y_B)
-            loss_color = wd['color_f_cb'] * self.loss_func(Cb_fusion, Cb_B) + \
-                         wd['color_f_cr'] * self.loss_func(Cr_fusion, Cr_B)
+            if self.color_loss:
+                loss_color = wd['color_f_cb'] * self.loss_func(Cb_fusion, Cb_B) + \
+                             wd['color_f_cr'] * self.loss_func(Cr_fusion, Cr_B)
             
         loss_intensity = loss_intensity.mean()
-        loss_color = loss_color.mean()
-        
-        loss_fusion += loss_intensity + loss_color
+        loss_fusion += loss_intensity
+        if self.color_loss:
+            loss_color = loss_color.mean()
+            loss_fusion += loss_color
+            loss['loss_color'] = loss_color
         
         ## grad loss
         if self.grad:
-            grad_A = self.sobelconv(Y_A)
-            grad_B = self.sobelconv(Y_B)
-            grad_fusion = self.sobelconv(Y_fusion)
+            if self.grad_only_on_Y:
+                grad_A = self.grad_op(Y_A)
+                grad_B = self.grad_op(Y_B)
+                grad_fusion = self.grad_op(Y_fusion)
+            else:
+                grad_A = self.grad_op(img_A)
+                grad_B = self.grad_op(img_B)
+                grad_fusion = self.grad_op(img_fusion)
 
             grad_joint = torch.max(grad_A, grad_B)
-            # if mask is not None:
-            #     loss_grad += 10 * self.loss_func(grad_fusion, grad_joint) + 40 * self.loss_func(mask * grad_fusion, mask * grad_A)
-            # else:
             loss_grad += wd['grad_f_joint'] * self.loss_func(grad_fusion, grad_joint)
+            # if mask is not None:
+            #     mask_expand = mask
+            #     if grad_fusion.ndim > 4:
+            #         mask_expand = mask_expand.unsqueeze(1)
+            #     loss_grad += wd['grad_f_ir'] * self.loss_func(grad_fusion * mask_expand, grad_A * mask_expand)
+            
+            # loss_grad += wd['grad_f_ir'] * self.loss_func(grad_fusion, grad_A) + \
+            #              wd['grad_f_vi'] * self.loss_func(grad_fusion, grad_B)
+            
             loss_grad = loss_grad.mean()
             
             loss_fusion += loss_grad
@@ -1329,7 +1388,8 @@ class DRMFFusionLoss(nn.Module):
         
         ## ssim loss
         if self.ssim:
-            loss_ssim = wd['ssim_f_joint'] * (self.ssim_func(img_fusion, img_A) + self.ssim_func(img_fusion, img_B))
+            loss_ssim = wd['ssim_f_joint'] * (self.ssim_func(img_fusion, img_A) + \
+                                              self.ssim_func(img_fusion, img_B))
             loss_fusion += loss_ssim
             loss.update({'loss_ssim' : loss_ssim})
         
@@ -1347,7 +1407,6 @@ class DRMFFusionLoss(nn.Module):
         
             
         loss.update({'loss_intensity' : loss_intensity,
-                     'loss_color' : loss_color,
                      'loss_fusion' : loss_fusion})
             
         return loss_fusion, loss
@@ -1357,7 +1416,7 @@ class DRMFFusionLoss(nn.Module):
     
 class EMMAFusionLoss(nn.Module):
     def __init__(self, 
-                 fusion_model: BaseModel,
+                 fusion_model: "BaseModel",
                  to_source_A_model: nn.Module,
                  to_source_B_model: nn.Module,
                  A_pretrain_path: str,
@@ -1630,11 +1689,16 @@ def get_loss(loss_type, channel=31, **kwargs: "Unpack[GetLossKwargsdType]"):
         criterion = DRMFFusionLoss(latent_weighted=kwargs.pop('latent_weighted', True),
                                    grad_loss=kwargs.pop('grad_loss', True),
                                    ssim_loss=kwargs.pop('ssim_loss', True),
+                                   color_loss=kwargs.pop('color_loss', True),
+                                   color_loss_bg_masked=kwargs.pop('color_loss_bg_masked', False),
                                    tv_loss=kwargs.pop('tv_loss', False),
                                    pseudo_l1_const=kwargs.pop('pseudo_l1_const', 1.4e-3),
                                    correlation_loss=kwargs.pop('correlation_loss', False),
                                    reduce_label=kwargs.pop('reduce_label', True),
-                                   weight_dict=kwargs.pop('weight_dict', None))
+                                   grad_op=kwargs.pop('grad_op', 'sobel'),
+                                   grad_only_on_Y=kwargs.pop('grad_only_on_Y', True),
+                                   weight_dict=kwargs.pop('weight_dict', None),
+                                   prior=kwargs.pop('prior', 'max'))
     elif loss_type == 'emmafusion':
         criterion = get_emma_fusion_loss(kwargs.pop('fusion_model'),
                                          kwargs.pop('device'),
@@ -1692,8 +1756,8 @@ if __name__ == "__main__":
         def only_fusion_step(self, a, b):
             return a + b
     
-    # fuse_loss = DRMFFusionLoss(reduce_label=True).cuda()
-    fuse_loss = get_emma_fusion_loss(FuseModel())
+    fuse_loss = DRMFFusionLoss(grad_op='sobel', reduce_label=True, pseudo_l1_const=0.).cuda()
+    # fuse_loss = get_emma_fusion_loss(FuseModel())
     # print(fuse_loss(fused, (vis, ir), mask))
     
     # u2fusion_loss = U2FusionLoss().cuda()
@@ -1702,10 +1766,10 @@ if __name__ == "__main__":
     while True:
         fused = torch.randn(1, 3, 64, 64).cuda().requires_grad_()
         vis = torch.randn(1, 3, 64, 64).cuda().requires_grad_()
-        ir = torch.randn(1, 1, 64, 64).cuda().requires_grad_()
+        ir = torch.randn(1, 3, 64, 64).cuda().requires_grad_()
         mask = torch.randint(0, 3, (1, 1, 64, 64)).cuda().float()
         
-        loss = fuse_loss(fused, (vis, ir))
+        loss = fuse_loss(fused, (vis, ir), mask=mask)
         loss[0].backward()
         print(loss)
         time.sleep(0.1)

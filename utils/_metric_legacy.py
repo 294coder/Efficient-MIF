@@ -467,7 +467,7 @@ def compare_index(A):
 # Date: 2024/02/04
 ########################################
 
-from .FS_index.hqnr2 import indexes_evaluation_FS
+from .sharpening_index.hqnr2 import indexes_evaluation_FS
 
 
 

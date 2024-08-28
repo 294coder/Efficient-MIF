@@ -20,7 +20,6 @@ import sys
 sys.path.append("./")
 sys.path.append("../")
 
-# from mamba_ssm import Mamba
 from model.module.vmamba_module_v3 import VSSBlock
 from model.module.layer_norm import LayerNorm as LayerNorm2d
 from model.base_model import BaseModel, register_model, PatchMergeModule
@@ -549,12 +548,6 @@ class MambaInjectionBlock(nn.Module):
         # v2: intro_conv
         self.intro_conv = convs(in_chan, inner_chan, 'conv3')
         
-        # self.inner_to_outter_conv = nn.Linear(2*inner_chan, inner_chan)
-        # self.lerp = nn.Sequential(LayerNorm(in_chan),
-        #                           nn.AdaptiveAvgPool2d(1),
-        #                           nn.Conv2d(in_chan, inner_chan*2, 1),
-        #                           Rearrange('b c 1 1 -> b 1 1 c'))
-        
         ssm_local_conv, ssm_global_conv = ssm_conv[0], ssm_conv[1]
         local_d_state, global_d_state = d_states[0], d_states[1]
         
@@ -606,21 +599,7 @@ class MambaInjectionBlock(nn.Module):
             mlp_type='gmlp',
             **mamba_kwargs,
         )
-
-        # v1: add attn
-        # self.adaptive_pool_size = (3, 3)
-        # _pool_size = math.prod(self.adaptive_pool_size)
-        # self.chan_attn = Attention(inner_chan, 4, inner_chan//4)  # 4 * 4 = 16 is d_state
-
-        # v2: Film module
-        # self.films = nn.ParameterDict(
-        #     {'beta': nn.Parameter(torch.randn(1, 1, 1, inner_chan), requires_grad=True),
-        #      'gamma': nn.Parameter(torch.randn(1, 1, 1, inner_chan), requires_grad=True)}
-        # )
-        # self.norm = nn.LayerNorm(inner_chan)
-        # self.act = nn.GELU()
-        # self.out_conv = nn.Linear(inner_chan, inner_chan)
-
+        
     def forward(self, 
                 feat: torch.Tensor, 
                 cond: torch.Tensor, 
@@ -637,22 +616,10 @@ class MambaInjectionBlock(nn.Module):
         cond = self.intro_conv(cond)
         cond = cond.permute(0, 2, 3, 1)
         x = feat + cond
-        # x = self.intro_to_latent(torch.cat([feat, cond], dim=-1))
-
-        # intro_conv v2: on catted feat and cond
-        # cond = cond.permute(0, 2, 3, 1)
-        # x = torch.cat([feat, cond], dim=-1)
-        # x = self.intro_conv(x)
-        # x_in = x
             
         # check cache for mamba blocks
         if not self.mamba.prev_state_gate:
             prev_global_state = None
-        
-        # if prev_global_state is not None:
-        #     print(f'input global shape: {prev_global_state.shape}')
-        # else:
-        #     print('no global ssm state')
         
         if hasattr(self, 'mamba_inner_shared'):
             if not self.mamba_inner_shared.prev_state_gate: 
@@ -668,21 +635,10 @@ class MambaInjectionBlock(nn.Module):
         
             if self.local_shift_size > 0:
                 x_local = torch.roll(x_local, shifts=(self.local_shift_size, self.local_shift_size), dims=(1, 2))
-        
-            # # decrepted
-            # if c_shuffle:
-            #     c_perm = torch.randperm(c)
-            #     x_local = x_local[:, :, :, c_perm]
                 
             x = x_local * self.enhanced_factor + x
         else: local_ssm_state = None
-        
-        # x_local = self.inner_norm(x_local)
-
-        # enhance v1
-        # x = self.mamba(self.inner_to_outter_conv(torch.cat([x_local, x], dim=-1)))
-        # enhance v2
-        
+  
         # local ssm state to global ssm state
         if self.local_state_to_global and self.mamba.prev_state_gate and local_ssm_state is not None:
             local_to_global_sta = reduce(local_ssm_state, '(b w) d n -> b d n', 'mean', b=b)
@@ -693,20 +649,6 @@ class MambaInjectionBlock(nn.Module):
         
         # ensure to call
         x, global_ssm_state = self.mamba(x, prev_global_state, skip_global_state)
-        
-        # if c_shuffle:
-        #     c_perm = torch.argsort(c_perm)
-        #     x = x[:, :, :, c_perm]
-
-        # x_spe = F.adaptive_avg_pool2d(
-        #     x_in.permute(0, 3, 1, 2), self.adaptive_pool_size
-        # ).view(b, self.inner_chan, -1)  # [b, c, prod(adapt_pool_size)]
-        # x_spe = self.chan_attn(x_spe).mean(dim=-1)[:, None, None]  # [b, 1, 1, c]
-        # x = x + x_spe
-
-        # gamma, beta = self.films['gamma'], self.films['beta']
-        # x = x * (1 + gamma / gamma.norm()) + beta / beta.norm()
-        # x = self.out_conv(self.act(self.norm(x))) + x
         
         return x, local_ssm_state, global_ssm_state
 
@@ -1330,3 +1272,4 @@ class LEMambaNet(BaseModel):
         for n, p in self.named_parameters():
             if 'op' in n:
                 print('{:<80} {:>10}'.format(n, str(p.dtype)))
+                

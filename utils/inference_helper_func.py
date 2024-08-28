@@ -1,10 +1,12 @@
 # GPL License
-# Copyright (C) 2021 , UESTC
+# Copyright (C) 2024 , UESTC
+
 # All Rights Reserved
 #
 # @Time    : 2021/10/15 17:53
-# @Author  : Xiao Wu
-# reference:
+# @Author  : Zihan Cao, Xiao Wu
+
+
 from functools import partial
 import inspect
 from typing import Tuple, Optional
@@ -22,7 +24,7 @@ import re
 import glob
 
 from .visualize import viz_batch, res_image
-from .metric import AnalysisPanAcc
+from .metric_sharpening import AnalysisPanAcc
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -74,6 +76,7 @@ def unref_for_loop(model,
         spa_size = tuple(dl.dataset.rgb.shape[-2:])
     
     inference_bar = tqdm(enumerate(dl, 1), dynamic_ncols=True, total=len(dl))
+    
     analysis = AnalysisPanAcc(ratio=patch_merge_module_kwargs.get('ergas_ratio', 4), ref=False,
                               sensor=patch_merge_module_kwargs.get('sensor', 'DEFAULT'),
                               default_max_value=patch_merge_module_kwargs.get('default_max_value', None))
@@ -133,24 +136,15 @@ def ref_for_loop(model,
                  **patch_merge_module_kwargs):
     from model.base_model import PatchMergeModule
     
-    
     analysis = AnalysisPanAcc(ergas_ratio)
     all_sr = []
     inference_bar = tqdm(enumerate(dl, 1), dynamic_ncols=True, total=len(dl))
 
     if not (has_patch_merge_model(model) or patch_merge_in_val_step(model)):
-            # assert bs == 1, 'batch size should be 1'
-            
-            # warp the model into PatchMergeModule
             model = PatchMergeModule(net=model, device=device, **patch_merge_module_kwargs)
     for i, (pan, ms, lms, gt) in inference_bar:
         pan, ms, lms, gt = pan.to(device).float(), ms.to(device).float(), lms.to(device).float(), gt.to(device).float()
-        
-        # def down_and_ups(x, ratio):
-        #     x = F.interpolate(x, size=(int(256/1.2), int(256/1.2)), mode='bilinear', antialias=True)
-        #     return F.interpolate(x, size=(256, 256), mode='bilinear', antialias=True)
-        # ms, pan, lms, gt = map(partial(down_and_ups, ratio=1.2), [ms, pan, lms, gt])
-        
+          
         # split the image into several patches to avoid gpu OOM
         if split_patch:
             input = (ms, lms, pan)
@@ -169,39 +163,6 @@ def ref_for_loop(model,
         if feature_callback is not None:
             feature_callback(model, i)
                 
-        # cache = get_local().cache
-        # attns = cache['FirstAttn.forward']
-        
-        ## panRWKV output feature
-        # if i in [4]:
-        #     cache = get_local().cache
-        #     out = cache['RWKVBlock_v2.forward']
-            
-        #     torch.save(out, f'visualized_img/lformer_full_attn_feat/output_feat_{i}.pth')
-
-        # get_local.clear()
-        
-        ## save panMamba updated_xs
-        # if i in [11]:
-        #     cache = get_local().cache
-        #     # feat_ssm_states = cache['UniSequential.LEMM_enc_forward']
-        #     # attns = cache['MSReversibleRefine.forward']
-        #     feat_updated_xs = cache['cross_selective_scan']
-        #     # for x in attns:
-        #     #     if x[0] is not None:
-        #     #         x[0] = x[0].to(torch.float16)
-        #             # x[1] = x[1].to(torch.float16)
-                    
-        #     for x in feat_updated_xs:
-        #         if x[0] is not None:
-        #             x[0] = x[0].to(torch.float16)
-        #         if x[1] is not None:
-        #             x[1] = x[1].to(torch.float16)
-                    
-        #     torch.save(feat_updated_xs, f'/Data2/ZiHanCao/exps/panformer/visualized_img/updated_xs/updated_xs_wv3_{i}.pth')
-        # print('saved pth file...')
-        # get_local.clear()
-                
         sr = sr.clip(0, 1)
         sr1 = sr.detach().cpu().numpy()
         all_sr.append(sr1)
@@ -215,45 +176,9 @@ def ref_for_loop(model,
         viz_batch(pan.detach().cpu(), suffix='pan', start_index=i, base_path='visualized_img/img_shows')
         viz_batch(res.detach().cpu(), suffix='residual', start_index=i, base_path='visualized_img/img_shows')
 
-        # print(f'PSNR: {psnr}, SSIM: {ssim}')
-
     print(analysis.print_str())
 
     return all_sr
-
-
-"""
-NOTE:
-当图片过大，无法放进gpu甚至内存中运行时，使用此helper function:
-    继承PatchMergeModule，val的时候将val_step里的self()或者self.forward()换成self.fordward_chop
-    输入参数我是直接传的args配置，你可以自己改一下，args.patch_size要求是个tuple,然后必须满足卷积的公式，卷积公式限制了一些patch大小
-    self.forward_chop
-    args.patch_size=(H,W)，是允许长方形的，不过没必要用到，是之前做双目超分的时候这样效果比较好
-"""
-
-
-# implement tf.gather_nd() in pytorch
-def gather_nd(tensor, indexes, ndim):
-    '''
-    inputs = torch.randn(1, 3, 5)
-    base = torch.arange(3)
-    X_row = base.reshape(-1, 1).repeat(1, 5)
-    lookup_sorted, indexes = torch.sort(inputs, dim=2, descending=True)
-    print(inputs)
-    print(indexes, indexes.shape)
-    # print(gathered)
-    print(gather_nd(inputs, indexes, [1, 2]))
-    '''
-    if len(ndim) == 2:
-        base = torch.arange(indexes.shape[ndim[0]])
-        row_index = base.reshape(-1, 1).repeat(1, indexes.shape[ndim[1]])
-        gathered = tensor[..., row_index, indexes]
-    elif len(ndim) == 1:
-        base = torch.arange(indexes.shape[ndim[0]])
-        gathered = tensor[..., base, indexes]
-    else:
-        raise NotImplementedError
-    return gathered
 
 
 def find_data_path(dataset_type, full_res):
@@ -261,14 +186,12 @@ def find_data_path(dataset_type, full_res):
         if not full_res:
             path = "/volsparse1/dataset/PanCollection/test_data/test_wv3_multiExm1.h5"
         else:
-            # path = '/home/ZiHanCao/datasets/pansharpening/wv3/full_examples/test_wv3_OrigScale_multiExm1.h5'
             path = "/Data2/ZiHanCao/datasets/pansharpening/pansharpening_test/test_wv3_OrigScale_multiExm1.h5"
     elif dataset_type == "cave":
         path = "/Data2/ZiHanCao/datasets/HISI/new_cave/test_cave(with_up)x4.h5"
     elif dataset_type == "cave_x8":
         path = "/volsparse1/dataset/HISR/cave_x8/test_cave(with_up)x8_rgb.h5"
     elif dataset_type == "harvard":
-        # path = "/Data2/ZiHanCao/datasets/HISI/new_harvard/test_harvard(with_up)x4_rgb.h5"
         path = "/Data2/ShangqiDeng/data/HSI/harvard_x4/test_harvard(with_up)x4_rgb200.h5"
     elif dataset_type == "harvard_x8":
         path = "/volsparse1/dataset/HISR/harvard_x8/test_harvard(with_up)x8_rgb.h5"
@@ -281,19 +204,16 @@ def find_data_path(dataset_type, full_res):
         if not full_res:
             path = "/Data2/ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5"
         else:
-            # path = '/home/ZiHanCao/datasets/pansharpening/gf/full_examples/test_gf2_OrigScale_multiExm1.h5'
             path = "/Data2/ZiHanCao/datasets/pansharpening/pansharpening_test/test_gf2_OrigScale_multiExm1.h5"
     elif dataset_type == "qb":
         if not full_res:
             path = "/Data2/ZiHanCao/datasets/pansharpening/qb/reduced_examples/test_qb_multiExm1.h5"
         else:
-            # path = '/home/ZiHanCao/datasets/pansharpening/qb/full_examples/test_qb_OrigScale_multiExm1.h5'
             path = "/Data2/ZiHanCao/datasets/pansharpening/pansharpening_test/test_qb_OrigScale_multiExm1.h5"
     elif dataset_type == "wv2":
         if not full_res:
             path = "/Data2/ZiHanCao/datasets/pansharpening/wv2/reduced_examples/test_wv2_multiExm1.h5"
         else:
-            # path = '/home/ZiHanCao/datasets/pansharpening/wv2/full_examples/test_wv2_OrigScale_multiExm1.h5'
             path = "/Data2/ZiHanCao/datasets/pansharpening/pansharpening_test/test_wv2_OrigScale_multiExm1.h5"
     elif dataset_type == "roadscene":
         path = "/Data2/ZiHanCao/datasets/RoadSceneFusion_1"
@@ -305,9 +225,9 @@ def find_data_path(dataset_type, full_res):
     return path
 
 def find_key_args_in_log(arch, sub_arch, datasets, weight_path):
-    # handle weight_path\
-    slash_with_id = re.findall(r'_[\d\D]{8}/', weight_path)[0]
-    run_id = slash_with_id[1:-1]
+    # handle weight_path
+    slash_with_id = re.findall(r'_[a-zA-Z0-9-]{8}(?=\.pth|_)', weight_path)[-1]
+    run_id = slash_with_id[1:]
     
     if sub_arch is not None and sub_arch != '': 
         sub_arch = '_' + sub_arch
@@ -371,14 +291,6 @@ def crop_inference(model: "BaseModel",
                     dilation=1,
                     padding=0,
                     stride=(stride[-1], stride[-1]))
-
-    # ncol = ncols[-1]
-    # out = out.view(bs, -1, out_c, crop_size[-2], crop_size[-1])  # [bs, 225, 64, 64]
-    # output = torch.zeros(bs, out_c, out_h, out_w)
-    # for bi in range(bs):
-    #     for i in range(ncol):
-    #         for j in range(ncol):
-    #             y = out[bi]  # [255, 64, 64]
 
     return output
 

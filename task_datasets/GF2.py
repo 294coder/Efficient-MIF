@@ -8,8 +8,6 @@ from typing import List, Tuple, Optional
 
 class Identity:
     def __call__(self, *args):
-        # args is a tuple
-        # return is also a tuple
         return args
 
 
@@ -150,15 +148,3 @@ class GF2Datasets(data.Dataset):
             f"get high pass ms and pan: {self.hp} \n "
             f"filter kernel size: {self.hp_ksize}"
         )
-
-
-if __name__ == "__main__":
-    import torch.utils.data as D
-
-    path = "/home/ZiHanCao/datasets/pansharpening/gf/training_gf2/train_gf2.h5"
-    d = h5py.File(path)
-    ds = GF2Datasets(d, norm_range=True, hp=False)
-    dl = D.DataLoader(ds, batch_size=16, num_workers=6)
-    for gt, ms, lms, pan in dl:
-        print(gt.shape, ms.shape, lms.shape, pan.shape, sep="\n")
-        break

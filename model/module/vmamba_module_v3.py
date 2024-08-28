@@ -15,9 +15,6 @@ from einops import rearrange, repeat
 from timm.models.layers import DropPath, trunc_normal_
 from fvcore.nn import FlopCountAnalysis, flop_count_str, flop_count, parameter_count
 
-from utils.network_utils import get_local
-get_local.activate()
-
 from .layer_norm import LayerNorm as LayerNorm2d
 DropPath.__repr__ = lambda self: f"timm.DropPath({self.drop_prob})"
 
@@ -481,7 +478,6 @@ class CrossMerge_Ab_1direction(torch.autograd.Function):
 # Note: we did not use csm_triton in and before vssm1_0230, we used pytorch version !
 # Note: we did not use no_einsum in and before vssm1_0230, we used einsum version !
 @torch.cuda.amp.autocast(enabled=False)
-@get_local('_ori_xs', '_updated_xs')
 def cross_selective_scan(
     x: torch.Tensor=None, 
     x_proj_weight: torch.Tensor=None,
@@ -557,7 +553,6 @@ def cross_selective_scan(
         
         
         # previous states cache
-        _ori_xs = _updated_xs = None
         if skip_state is not None and skip_sta_proj_w is not None:
             skip_state = F.conv1d(skip_state,   # [b, K*D, d_state]
                                   skip_sta_proj_w,   # [K*D, D, 1]
@@ -581,13 +576,11 @@ def cross_selective_scan(
                 prev_state = prev_state + skip_state
             
             # [B, K*D, L] @ [K*N, D, 1] -> [B, K*N, L]
-            _ori_xs = xs.detach().clone()
             gating = F.conv1d(xs.view(B, -1, L), xs_gate_weight,
                               bias=(xs_gate_bias.view(-1) if x_proj_bias is not None else None), 
                               groups=K)
             upd = torch.einsum('bkdn,bknl->bkdl', prev_state.view(B, K, -1, N), gating.view(B, K, -1, L))
             xs = xs + upd * ssm_state_ratio
-            _updated_xs = xs.detach().clone()
             # print('----using gating ratio----')
         
     else:

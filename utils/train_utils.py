@@ -9,6 +9,7 @@ from pathlib import Path
 from PIL import Image
 import PIL.Image as Image
 from contextlib import contextmanager
+from collections import OrderedDict
 from typing import Union, TYPE_CHECKING
 
 import h5py
@@ -17,7 +18,6 @@ import torch
 from torch.utils.data import DataLoader
 
 from utils import h5py_to_dict, NameSpace, easy_logger
-logger = easy_logger()
 
 if TYPE_CHECKING:
     from accelerate import Accelerator
@@ -33,9 +33,9 @@ def get_eval_dataset(args, logger=None):
     from task_datasets.MSRS import MSRSDatasets
     from task_datasets.M3FD import M3FDDALIPipeLoader
     from task_datasets.MedHarvard import MedHarvardDataset
+    from task_datasets.SICE import SICEDataset
 
-    if logger is None:
-        from loguru import logger
+    logger = easy_logger(func_name='get_eval_dataset')
 
     val_ds, val_dl = None, None
 
@@ -47,16 +47,12 @@ def get_eval_dataset(args, logger=None):
         )
     elif args.dataset == "tno":
         val_ds = TNODataset(
-            args.path.base_dir, 
-            "test", 
-            aug_prob=0.0, 
-            no_split=True,
-            get_name=True
+            args.path.base_dir, "test", aug_prob=0.0, no_split=True, get_name=True
         )
     elif args.dataset == "msrs":
         val_ds = MSRSDatasets(
             args.path.base_dir,
-            mode=args.dataset_mode,  # or 'test'/'detection' 
+            mode=args.dataset_mode,  # or 'test'/'detection'
             transform_ratio=0.0,
             get_name=True,
             reduce_label=args.reduce_label,
@@ -72,10 +68,10 @@ def get_eval_dataset(args, logger=None):
             get_name=True,
             reduce_label=args.reduce_label,
         )
-    elif args.dataset == 'm3fd':
+    elif args.dataset == "m3fd":
         val_dl = M3FDDALIPipeLoader(
             args.path.base_dir,
-            'test',
+            "test",
             batch_size=args.val_bs,
             device=args.device,
             shuffle=False,
@@ -83,7 +79,7 @@ def get_eval_dataset(args, logger=None):
             get_name=True,
             reduce_label=args.reduce_label,
         )
-        
+
     elif args.dataset == "med_harvard":
         val_ds = MedHarvardDataset(
             args.path.base_dir,
@@ -91,7 +87,15 @@ def get_eval_dataset(args, logger=None):
             device=args.device,
             data_source="xmu",
             get_name=True,
-            task='SPECT-MRI',
+            task="SPECT-MRI",
+        )
+    elif args.dataset == "sice":
+        val_ds = SICEDataset(
+            data_dir=args.path.base_dir,
+            mode="test",
+            transformer_ratio=0.0,
+            only_y=args.only_y,
+            get_name=True,
         )
 
     ## 2. sharpening datasets (with gt)
@@ -167,10 +171,10 @@ def get_eval_dataset(args, logger=None):
 
 
 def get_fusion_dataset(
-    args: NameSpace, 
-    accelerator: "Accelerator",
-    device: Union[str, torch.device]
+    args: NameSpace, accelerator: "Accelerator", device: Union[str, torch.device]
 ):
+    logger = easy_logger()
+    
     train_ds, val_ds, train_dl, val_dl = None, None, None, None
 
     if args.dataset in [
@@ -182,8 +186,11 @@ def get_fusion_dataset(
         "llvip",
         "med_harvard",
         "m3fd",
+        "sice",
+        "mefb",
     ]:
         args.task = "fusion"
+        args.has_gt = False
         args.path.base_dir = getattr(args.path, f"{args.dataset}_base_dir")
         if args.dataset == "roadscene":
             from task_datasets.RoadScene import RoadSceneDataset
@@ -216,7 +223,7 @@ def get_fusion_dataset(
                 output_size=args.fusion_crop_size,
                 n_proc_load=1,
                 reduce_label=args.datasets_cfg.reduce_label,
-                only_y_component=False, # args.only_y
+                only_y_component=False,  # args.only_y
             )
             val_ds = MSRSDatasets(
                 args.path.base_dir,
@@ -225,7 +232,7 @@ def get_fusion_dataset(
                 output_size=args.fusion_crop_size,
                 n_proc_load=1,
                 reduce_label=args.datasets_cfg.reduce_label,
-                only_y_component=False, # args.only_y
+                only_y_component=False,  # args.only_y
             )
         elif args.dataset == "llvip":
             from task_datasets.LLVIP import LLVIPDALIPipeLoader
@@ -241,7 +248,7 @@ def get_fusion_dataset(
                 shard_id=accelerator.process_index,
                 shuffle=True,
                 reduce_label=args.datasets_cfg.reduce_label,
-                only_y_component=False # args.only_y
+                only_y_component=False,  # args.only_y
             )
             val_dl = LLVIPDALIPipeLoader(
                 args.path.base_dir,
@@ -253,10 +260,11 @@ def get_fusion_dataset(
                 shard_id=accelerator.process_index,
                 shuffle=True,
                 reduce_label=args.datasets_cfg.reduce_label,
-                only_y_component=False # args.only_y
+                only_y_component=False,  # args.only_y
             )
-        elif args.dataset == 'm3fd':
+        elif args.dataset == "m3fd":
             from task_datasets import M3FDDALIPipeLoader
+
             train_dl = M3FDDALIPipeLoader(
                 args.path.base_dir,
                 "train",
@@ -267,7 +275,7 @@ def get_fusion_dataset(
                 shard_id=accelerator.process_index,
                 shuffle=True,
                 reduce_label=args.datasets_cfg.reduce_label,
-                only_y_component=False, # args.only_y
+                only_y_component=False,  # args.only_y
             )
             val_dl = M3FDDALIPipeLoader(
                 args.path.base_dir,
@@ -279,8 +287,8 @@ def get_fusion_dataset(
                 shard_id=accelerator.process_index,
                 shuffle=True,
                 reduce_label=args.datasets_cfg.reduce_label,
-                only_y_component=False, #args.only_y
-            )  
+                only_y_component=False,  # args.only_y
+            )
 
         elif args.dataset == "vis_ir_joint":
             from task_datasets import VISIRJointGenericLoader
@@ -295,30 +303,34 @@ def get_fusion_dataset(
                 num_shards=accelerator.num_processes,
                 shard_id=accelerator.process_index,
                 reduce_label=args.datasets_cfg.reduce_label,
-                only_y_component=False
+                only_y_component=False,
             )
             val_dl = VISIRJointGenericLoader(
-                vars(args.path.base_dir),
+                ## only test msrs and roadscene_tno_joint dataset
+                {'msrs': args.path.base_dir['msrs'],
+                 'roadscene_tno_joint': args.path.base_dir['roadscene_tno_joint']},
                 mode="test",
+                output_size=224,  # enforce the different size images to be the same size
                 batch_size=args.val_bs,
                 device=accelerator.device,
-                shuffle_in_dataset=True,
-                fast_eval_n_samples=90,
+                shuffle_in_dataset=False,
+                fast_eval_n_samples=30,
                 num_shards=accelerator.num_processes,
                 shard_id=accelerator.process_index,
                 reduce_label=args.datasets_cfg.reduce_label,
-                only_y_component=False
+                only_y_component=False,
             )
 
         elif args.dataset == "med_harvard":
             from task_datasets.MedHarvard import MedHarvardDataset
-            if getattr(args, 'datasets_cfg', None):
+
+            if getattr(args, "datasets_cfg", None):
                 task = args.datasets_cfg.med_harvard.task
             else:
                 task = None
 
             train_ds = MedHarvardDataset(
-                args.path.base_dir, 
+                args.path.base_dir,
                 mode="train",
                 device=device,
                 data_source="xmu",
@@ -334,7 +346,7 @@ def get_fusion_dataset(
             )
 
             assert args.num_worker == 0, "num_worker should be 0 for MedHarvard dataset"
-        
+
         elif args.dataset == "sice":
             from task_datasets.SICE import SICEDataset
 
@@ -344,7 +356,6 @@ def get_fusion_dataset(
                 transformer_ratio=args.aug_probs[0],
                 output_size=args.fusion_crop_size,
                 only_y=args.only_y,
-                get_name=args.get_name,
             )
             val_ds = SICEDataset(
                 data_dir=args.path.base_dir,
@@ -352,8 +363,8 @@ def get_fusion_dataset(
                 transformer_ratio=args.aug_probs[0],
                 output_size=args.fusion_crop_size,
                 only_y=args.only_y,
-                get_name=args.get_name,
             )
+            args.has_gt = True
 
         else:
             raise NotImplementedError(f"not support dataset {args.dataset}")
@@ -371,7 +382,6 @@ def get_fusion_dataset(
         args.task = "sharpening"
 
         # the dataset has already splitted
-
         # FIXME: 需要兼顾老代码（只有trian_path和val_path）的情况
         if hasattr(args.path, "train_path") and hasattr(args.path, "val_path"):
             # 旧代码：手动切换数据集路径
@@ -397,16 +407,16 @@ def get_fusion_dataset(
 
             d_train, d_val = h5py_to_dict(h5_train), h5py_to_dict(h5_val)
             train_ds, val_ds = (
-                WV3Datasets(d_train, hp=args.hp, aug_prob=args.aug_probs[0]),
-                WV3Datasets(d_val, hp=args.hp, aug_prob=args.aug_probs[1]),
+                WV3Datasets(d_train, aug_prob=args.aug_probs[0]),
+                WV3Datasets(d_val, aug_prob=args.aug_probs[1]),
             )
         elif args.dataset == "gf2":
             from task_datasets.GF2 import GF2Datasets
 
             d_train, d_val = h5py_to_dict(h5_train), h5py_to_dict(h5_val)
             train_ds, val_ds = (
-                GF2Datasets(d_train, hp=args.hp, aug_prob=args.aug_probs[0]),
-                GF2Datasets(d_val, hp=args.hp, aug_prob=args.aug_probs[1]),
+                GF2Datasets(d_train, aug_prob=args.aug_probs[0]),
+                GF2Datasets(d_val, aug_prob=args.aug_probs[1]),
             )
         elif args.dataset[:4] == "cave" or args.dataset[:7] == "harvard":
             from task_datasets.HISR import HISRDatasets
@@ -447,6 +457,7 @@ def get_fusion_dataset(
             prefetch_factor=8 if args.num_worker > 0 else None,
             pin_memory=False,
             shuffle=args.shuffle if not args.ddp else None,
+            drop_last=True if args.shuffle else False,
         )
     if val_dl is None:
         val_dl = DataLoader(
@@ -456,9 +467,46 @@ def get_fusion_dataset(
             sampler=val_sampler,
             pin_memory=False,
             shuffle=args.shuffle if not args.ddp else None,
+            drop_last=False,
         )
 
     return train_ds, train_dl, val_ds, val_dl
+
+
+def set_ema_model_params_with_keys(ema_model_params: "dict[str, list[torch.Tensor] | int | float]", 
+                                   keys: "list[str]",
+                                   keys_set: list[str]=['shadow_params']):
+    """set ema model parameters with keys
+
+    Args:
+        ema_model_params (dict[str, list[torch.Tensor] | int | float]): ema model parameters
+        keys (list[str]): keys
+
+    Returns:
+        dict: ema model parameters with keys
+    """
+    logger = easy_logger()
+    
+    if not isinstance(keys, list):
+        keys = list(keys)
+    
+    ema_model_params_with_keys = OrderedDict()
+    for k in ema_model_params.keys():
+        if k in keys_set and k in ema_model_params:
+            logger.info(f'set ema_model {k} params with keys')
+            params = ema_model_params[k]
+            assert params is not None
+            assert len(params) == len(keys), "ema_model_params and keys should have the same length"
+            
+            _params = OrderedDict()
+            for mk, p in zip(keys, params):
+                _params[mk] = p
+                
+            ema_model_params_with_keys[k] = _params
+        elif k not in keys_set and k in ema_model_params:
+            ema_model_params_with_keys[k] = ema_model_params[k]
+            
+    return ema_model_params_with_keys
 
 
 def run_once(abled=True):
@@ -496,21 +544,25 @@ def save_imgs_in_zip(
         mode (str, optional): mode to write in. Defaults to "w".
         verbose (bool, optional): print out. Defaults to False.
         save_file_ext (str, optional): image extension in the zip file. Defaults to "jpeg".
-        
+
     Yields:
         callable: a function to save image
-         
+
     Examples::
-    
+
         with save_imgs_in_zip('zip_file.zip') as add_image:
             img, img_name = get_img()
             add_image(img, img_name)
-            
+
     :ref: `add_image`
-        
+
     """
+    logger = easy_logger()
+    
     # save_file_ext = save_file_ext.upper()
-    zf = zipfile.ZipFile(zipfile_name, mode=mode, compression=zipfile.ZIP_DEFLATED, compresslevel=9)
+    zf = zipfile.ZipFile(
+        zipfile_name, mode=mode, compression=zipfile.ZIP_DEFLATED, compresslevel=9
+    )
     bytes_io = BytesIO()
     # jpg compression
     _jpg_quality = 100  # 95 if save_file_ext in ["jpeg", "jpg", "JPG", "JPEG"] else 100
@@ -529,7 +581,9 @@ def save_imgs_in_zip(
                 ), "image_name should have the same length as image_data"
 
                 for img in image_data:  # [b, h, w, c]
-                    Image.fromarray(img).save(bytes_io, format=save_file_ext, quality=_jpg_quality)
+                    Image.fromarray(img).save(
+                        bytes_io, format=save_file_ext, quality=_jpg_quality
+                    )
                     batched_image_bytes.append(bytes_io.getvalue())
             elif image_data.ndim == 3:
                 if image_data.shape[-1] == 1:  # gray image  # [h, w, 1]
@@ -538,14 +592,18 @@ def save_imgs_in_zip(
                     )
                     image_data = bytes_io.getvalue()
                 elif image_data.shape[-1] == 3:
-                    Image.fromarray(image_data).save(bytes_io, format=save_file_ext, quality=_jpg_quality)
+                    Image.fromarray(image_data).save(
+                        bytes_io, format=save_file_ext, quality=_jpg_quality
+                    )
                     image_data = bytes_io.getvalue()
                 else:
                     raise ValueError(
                         f"image_data shape {image_data.shape} not supported"
                     )
             elif image_data.ndim == 2:  # gray image  # [h, w]
-                Image.fromarray(image_data).save(bytes_io, format=save_file_ext, quality=_jpg_quality)
+                Image.fromarray(image_data).save(
+                    bytes_io, format=save_file_ext, quality=_jpg_quality
+                )
                 image_data = bytes_io.getvalue()
 
             return image_data, batched_image_bytes
@@ -584,7 +642,7 @@ def save_imgs_in_zip(
 
             if verbose:
                 logger.info(f"add image {image_name} to zip file")
-                
+
             bytes_io.seek(0)
             bytes_io.truncate()
 
@@ -599,22 +657,4 @@ def save_imgs_in_zip(
             logger.info(f"zip file saved at {zipfile_name}, zipfile close")
         zf.close()
         bytes_io.close()
-        
-if __name__ == '__main__':
-    from pathlib import Path
-    from PIL import Image
-    
-    from utils import EasyProgress
 
-    vi_path = Path('/Data3/cao/ZiHanCao/datasets/M3FD/M3FD_Fusion/raw_png/ir')
-    img_paths = list(vi_path.glob('*.png'))
-    tbar, task = EasyProgress.easy_progress(['save images in zip'], [len(img_paths)])
-
-    tbar.start()
-    with save_imgs_in_zip('ir_jpg.zip', verbose=False) as add_img:
-        for p in img_paths:
-            img = Image.open(p)
-            saved_name = p.name.replace('.png', '.jpg')
-            add_img(img, saved_name)
-            tbar.update(task, advance=1, total=len(img_paths),
-                        description=f'saved {saved_name}')

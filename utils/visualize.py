@@ -7,6 +7,7 @@ import numpy as np
 import torch
 from torch import Tensor
 import matplotlib.pyplot as plt
+
 from utils.misc import to_numpy
 
 def get_rgb_channel_by_dataset_name(tensor, dataset_name: str):
@@ -105,21 +106,24 @@ def res_image(gt: Tensor, sr: Tensor, *, exaggerate_ratio: int = None) -> torch.
 
 def get_spectral_image_ready(batch_image: Tensor, 
                              tensor_name: str, 
+                             task: str=None,
                              ds_name: Literal['wv3', 'wv2', 'gf2', 'qb',
                                               'gf5', 'gf5-gf1', 'flir', 'tno',
                                               'msrs']=None) -> Tensor:
     # batch_image: [B, C, H, W]
-    if tensor_name in ('lms', 'ms', 'sr'):  # for pansharpening and HISR tasks
-        batch_image = get_rgb_channel_by_dataset_name(batch_image, ds_name)
-    elif tensor_name == 'pan' and batch_image.shape[1] > 3:
-        batch_image = batch_image[:, :3]
-    
     img_arrs = batch_image.permute(0, 2, 3, 1).detach().cpu().numpy()  # [B, H, W, C]
-    if ds_name in ['flir', 'tno', 'msrs']:
+    if task == 'fusion': 
         transform_fn = lambda x, const: torch.tensor(x, dtype=torch.float32)
-    else:
+    elif task == 'sharpening':
+        if tensor_name in ('lms', 'ms', 'sr'):  # for pansharpening and HISR tasks
+            batch_image = get_rgb_channel_by_dataset_name(batch_image, ds_name)
+        elif tensor_name == 'pan' and batch_image.shape[1] > 3:
+            batch_image = batch_image[:, :3]
+        
         transform_fn = lambda x, const: torch.tensor(normalize(x, to_uint8=False) * const)
-    
+    else:
+        raise ValueError(f'Invalid task: {task}')
+        
     if 'res' in tensor_name:
         equalized_img = [transform_fn(i, 10).permute(-1, 0, 1)[None, ...] for i in img_arrs]  # [1, C, H, W]
     else:
