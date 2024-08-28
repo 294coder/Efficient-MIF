@@ -159,7 +159,7 @@ You can find our detailed descriptions of the proposed fusion models at `readmes
 | Models   | Tasks                | Guidance   |
 | :------: | :------------------: | :--------: |
 | [LE-Mamba (ACM MM 24)](https://arxiv.org/abs/2404.09293) | Pansharpening; HMIF. | [README](readmes/le-mamba.md) |
-| LFormer (ACM MM 24)()
+| [LFormer (ACM MM 24)](https://arxiv.org/pdf/2404.12804) | Pansharpening; HMIF. | [README] |
 
 
 

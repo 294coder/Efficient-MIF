@@ -92,4 +92,15 @@ LE-Mamba reaches SOTA performances on widely-used Pansharpening and HMIF dataset
         <img src="figs/le-mamba-HMIF.png" alt="Image 1" width="100%">
     </div>
 </body>
-</html
+</html>
+
+# Citation
+If you find this work useful, please consider citing:
+```
+@article{cao2024novel,
+  title={A novel state space model with local enhancement and state sharing for image fusion},
+  author={Cao, Zihan and Wu, Xiao and Deng, Liang-Jian and Zhong, Yu},
+  journal={arXiv preprint arXiv:2404.09293},
+  year={2024}
+}
+```

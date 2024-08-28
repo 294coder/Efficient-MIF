@@ -20,23 +20,14 @@ path:
   gf2_train_path: "/Data2/ZiHanCao/datasets/pansharpening/gf/training_gf2/train_gf2.h5"
   gf2_val_path: "/Data2/ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5"
 
-  qb_train_path: "/Data2/ZiHanCao/datasets/pansharpening/qb/training_qb/train_qb.h5"
-  qb_val_path: "/Data2/ZiHanCao/datasets/pansharpening/qb/reduced_examples/test_qb_multiExm1.h5"
-
-  cave_x4_train_path: "/Data2/ZiHanCao/datasets/HISI/new_cave/train_cave(with_up)x4.h5"
-  cave_x4_val_path: "/Data2/ZiHanCao/datasets/HISI/new_cave/test_cave(with_up)x4.h5"
-
   cave_x8_train_path: "/Data2/ZiHanCao/datasets/HISI/new_cave/x8/train_cave(with_up)x8_rgb_16.h5"
   cave_x8_val_path: "/Data2/ZiHanCao/datasets/HISI/new_cave/x8/test_cave(with_up)x8_rgb.h5"
-
-  harvard_x4_train_path: "/Data2/ZiHanCao/datasets/HISI/new_harvard/train_harvard(with_up)x4_rgb.h5"
-  harvard_x4_val_path: "/Data2/ZiHanCao/datasets/HISI/new_harvard/test_harvard(with_up)x4_rgb.h5"
 
   harvard_x8_train_path: "/Data2/ZiHanCao/datasets/HISI/new_harvard/x8/train_harvard(with_up)x8_rgb.h5"
   harvard_x8_val_path: "/Data2/ZiHanCao/datasets/HISI/new_harvard/x8/test_harvard(with_up)x8_rgb.h5"
 
 network_configs:
-  panMamba:
+  LEMamba:
     img_channel: 8
     condition_channel: 1
     out_channel: 8
@@ -86,12 +77,12 @@ network_configs:
     # ssm_dec_convs: [[null, 11], [7, 11], [7, 11]]
     # drop_path_rate: 0.2
 
-    if_abs_pos: no # buggy: convergence is slow
+    if_abs_pos: no
     if_rope: no
     patch_merge: yes
     upscale: 4
 
-  panMamba_only_NAF:
+  LEMamba_only_NAF:
     img_channel: 8
     condition_channel: 1
     out_channel: 8
@@ -101,7 +92,7 @@ network_configs:
     naf_chan_upscale: [2, 2, 2]
     middle_blk_nums: 2
 
-    if_abs_pos: no # buggy: convergence is slow
+    if_abs_pos: no
     if_rope: no
     patch_merge: yes
     upscale: 4
