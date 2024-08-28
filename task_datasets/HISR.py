@@ -188,25 +188,3 @@ class HISRDatasets(data.Dataset):
 
     def __len__(self):
         return len(self.rgb)
-
-
-if __name__ == "__main__":
-    path = r"/home/ZiHanCao/datasets/HISI/new_cave/x8/validation_cave(with_up)x8_rgb.h5"
-    file = h5py.File(path)
-    dataset = HISRDatasets(file, aug_prob=0.9)
-    dl = data.DataLoader(
-        dataset, batch_size=1, shuffle=True, num_workers=0, pin_memory=True
-    )
-    for i, (rgb, lr_hsi, hsi_up, gt) in enumerate(dl, 1):
-        print(
-            f"lr_hsi: {lr_hsi.shape}, rgb: {rgb.shape}, hsi_up: {hsi_up.shape}, gt: {gt.shape}"
-        )
-        fig, axes = plt.subplots(ncols=4, figsize=(20, 5))
-        axes[0].imshow(rgb[0].permute(1, 2, 0).numpy()[..., :3])
-        axes[1].imshow(lr_hsi[0].permute(1, 2, 0).numpy()[..., :3])
-        axes[2].imshow(hsi_up[0].permute(1, 2, 0).numpy()[..., :3])
-        axes[3].imshow(gt[0].permute(1, 2, 0).numpy()[..., :3])
-        plt.tight_layout(pad=0)
-        plt.show()
-        time.sleep(3)
-        # fig.savefig(f'./tmp/{i}.png', dpi=100)

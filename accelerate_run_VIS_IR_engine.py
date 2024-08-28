@@ -1,16 +1,13 @@
 import gc
 import os
-from functools import partial
 import math
 from pathlib import Path
-from typing import Callable, List, Union
+from typing import Callable, Union
 
 import accelerate.scheduler
 import torch
-import torch.distributed as dist
 from torch.utils.data import DataLoader
 import accelerate
-from torch_ema import ExponentialMovingAverage
 from accelerate.utils import DistributedType
 
 import warnings
@@ -21,24 +18,22 @@ from model.base_model import BaseModel
 from utils import (
     AnalysisPanAcc,
     AnalysisVISIRAcc,
-    LinearWarmupScheduler,
     dict_to_str,
-    is_main_process,
     prefixed_dict_key,
-    res_image,
     step_loss_backward,
     accum_loss_dict,
     ave_ep_loss,
     loss_dict2str,
     ave_multi_rank_dict,
     NonAnalysis,
-    model_params,
     dist_gather_object,
     get_precision,
     module_load,
     EasyProgress,
     sanity_check,
     y_pred_model_colored,
+    EMA,
+    WindowBasedPadder,
 )
 from schedulefree import AdamWScheduleFree
 from utils.log_utils import TensorboardLogger
@@ -73,7 +68,6 @@ def get_analyser(args):
     return analyser
 
 
-@torch.no_grad()
 @torch.inference_mode()
 def val(
         accelerator: accelerate.Accelerator,
@@ -93,6 +87,7 @@ def val(
     
     # get analysor for validate metrics
     analysis = get_analyser(args)
+    padder = WindowBasedPadder(32)
     
     dtype = get_precision(accelerator.mixed_precision)
     tbar, task_id = EasyProgress.easy_progress(["Validation"], [len(val_dl)], 
@@ -113,6 +108,8 @@ def val(
             else:
                 mask = None
 
+        ir = padder(ir)
+        vis = padder(vis, no_check_pad=True)
         with y_pred_model_colored(vis, enable=args.only_y) as (vis_y, back_to_rgb):
             outp = network(vis_y, ir, mask, mode="fusion_eval", to_rgb_fn=back_to_rgb)
             # outp = back_to_rgb(outp)
@@ -124,6 +121,9 @@ def val(
             fused = outp
             seg_map = None
 
+        fused = padder.inverse(fused)
+        # TODO: handle the segmap?
+                       
         loss_out = criterion(fused, gt, mask=mask)
         # if loss is hybrid, will return tensor loss and a dict
         if isinstance(loss_out, tuple):
@@ -146,26 +146,34 @@ def val(
     val_loss /= i
     val_loss_dict = ave_ep_loss(val_loss_dict, i)
     
-    if args.ddp:
-        if args.log_metrics:  # gather from all procs to proc 0
-            _gathered_analysis = dist_gather_object(analysis, n_ranks=accelerator.num_processes)
-        gathered_val_dict = dist_gather_object(val_loss_dict, n_ranks=accelerator.num_processes)
-        val_loss_dict = ave_multi_rank_dict(gathered_val_dict)
-        
+    if args.log_metrics:  # gather from all procs to proc 0
+        mp_analysis = dist_gather_object(analysis, n_ranks=accelerator.num_processes)
+    gathered_val_dict = dist_gather_object(val_loss_dict, n_ranks=accelerator.num_processes)
+    val_loss_dict = ave_multi_rank_dict(gathered_val_dict)
+
+    # log validation results
+    if args.log_metrics:
+        if accelerator.is_main_process and args.ddp:
+            for a in mp_analysis:
+                logger.info(a.result_str())  # log in every process
+        elif not args.ddp:
+            logger.info(analysis.result_str())
+
     # gather metrics and log image
     acc_ave = analysis.acc_ave
     if accelerator.is_main_process:
-        # ddp log metrics
         if args.ddp and args.log_metrics:
             n = 0
-            acc = _gathered_analysis[0].empty_acc
-            for analysis in _gathered_analysis:
-                for k, v in analysis.acc_ave.items():
-                    acc[k] += v * analysis._call_n
-                n += analysis._call_n
+            acc = analysis.empty_acc
+            for a in mp_analysis:
+                for k, v in a.acc_ave.items():
+                    acc[k] += v * a._call_n
+                n += a._call_n
             for k, v in acc.items():
                 acc[k] = v / n
             acc_ave = acc
+        else:
+            n = analysis._call_n
             
         if logger is not None:
             # log validate curves
@@ -175,25 +183,19 @@ def val(
             for k, v in val_loss_dict.items():
                 logger.log_curve(v, f'val_{k}', ep)
 
-            # log validate image (last batch)
-            if gt.shape[0] > 4:
-                func = lambda x: x[:4]
-                vis, ir, fused = list(map(func, [vis, ir, fused]))
-            logger.log_images([vis, ir, fused], nrow=2, names=["vis", "ir", "fused"], 
-                              epoch=ep, ds_name=args.dataset)
+            # log validate image(last batch)
+            if gt.shape[0] > 8:
+                func = lambda x: x[:8]
+                vis, ir, fused= list(map(func, [vis, ir, fused]))
+            logger.log_images([vis, ir, fused], nrow=4, names=["vis", "ir", "fused"],
+                              epoch=ep, task=args.task, ds_name=args.dataset)
 
-            if seg_map is not None:
-                logger.log_image(seg_map, name="seg_map", epoch=ep)
-
-    # print eval info
-    logger.print('\n\nsummary of evaluation:')
-    if accelerator.is_main_process:
-        logger.print(loss_dict2str(val_loss_dict))
-        logger.print(f"\n{dict_to_str(acc_ave)}" if args.log_metrics else "")
-    logger.print('==================================================================================================')
-    if accelerator.is_main_process:
-        tbar.reset(task_id)
-    
+        # print eval info
+        logger.info('\n\nsummary of evaluation:')
+        logger.info(f'evaluate {n} samples')
+        logger.info(loss_dict2str(val_loss_dict))
+        logger.info(f"\n{dict_to_str(acc_ave)}" if args.log_metrics else "")
+        logger.info('==================================================================================================')
     return acc_ave, val_loss  # only rank 0 is reduced and other ranks are original data
 
 
@@ -252,17 +254,20 @@ def train(
     # Prepare everything with accelerator
     model, optimizer, train_dl, val_dl, lr_scheduler = accelerator.prepare(model, optimizer, train_dl, val_dl, lr_scheduler)
     
+    # FIXME: Deepspeed ZERO3 does not support!
+    # ema_net = ExponentialMovingAverage(parameters=[p for p in model.parameters() if p.requires_grad],
+    #                                    decay=args.ema_decay)
+    # ema_net.to(accelerator.device)
+    ema_net = EMA(model, beta=args.ema_decay, update_every=2)
+    accelerator.register_for_checkpointing(ema_net)
+    
     # load state
     if args.resume_path is not None:
         # e.g., panMamba/**/ep_80
         accelerator.load_state(input_dir=args.resume_path)
+        logger.info(f">>> PROCESS {accelerator.process_index}: loaded state from {args.resume_path} done.")
     
-    # FIXME: Deepspeed ZERO3 does not support!
-    ema_net = ExponentialMovingAverage(parameters=[p for p in model.parameters() if p.requires_grad],
-                                       decay=args.ema_decay)
-    ema_net.to(accelerator.device)
-    
-    
+    accelerator.wait_for_everyone()
     if args.sanity_check:
         logger.print(">>> sanity check...")
         with torch.no_grad():
@@ -314,7 +319,8 @@ def train(
             with accelerator.autocast() and accelerator.accumulate(model):
                 with y_pred_model_colored(vis, enable=args.only_y) as (vis_y, back_to_rgb):
                     fused, loss_out = model(vis_y, ir, mask, gt, criterion, 
-                                            mode="fusion_train", to_rgb_fn=back_to_rgb)  # hack the model the first arg
+                                            mode="fusion_train", to_rgb_fn=back_to_rgb,
+                                            has_gt=args.has_gt)  # hack the model the first arg
                     # fused = back_to_rgb(fused)
             
             # if loss is hybrid, will return tensor loss and a dict
@@ -379,66 +385,48 @@ def train(
             else:
                 logger.info('>>> optimizer step was skipped due to mixed precision overflow')
             
-        # @is_main_proces  # deep speed need all reduce
-        # NOTE: exists hf state already, it is a need for saving model params manually?
-        def collect_params(ema_net, ep, val_acc_dict):
-            # TODO: ZERO-3 not save model
-            # if accelerator.distributed_type == DistributedType.DEEPSPEED:
-            #     return None
-            params = {}
-            # params["model"] = model_params(model)
-            params["ema_model"] = ema_net.state_dict()  # TODO: contain on-the-fly params, find way to remove and not affect the load
-            params["epochs"] = ep
-            params["metrics"] = val_acc_dict
-            
-            return params
-        
         # eval
         if (ep % eval_every_epochs == 0) and (eval_every_epochs != -1):
-            model.eval()
+            ema_net.eval()
             optimizer = _optimizer_eval(optimizer)
-            with ema_net.average_parameters() and accelerator.autocast():
-                val_acc_dict, val_loss = val(accelerator, model, val_dl, criterion, logger, ep, optim_val_loss, args)
+            with accelerator.autocast():
+                val_acc_dict, val_loss = val(accelerator, ema_net.ema_model, val_dl,
+                                             criterion, logger, ep, optim_val_loss, args)
                 torch.cuda.empty_cache()  # may be useful
                 gc.collect()
             model.train()
             optimizer = _optimizer_train(optimizer)
             
-            params = collect_params(ema_net, ep, val_acc_dict)
-            save_or_not = True
-            if params is not None:
-                if save_or_not := save_checker(val_acc_dict, val_loss, optim_val_loss):
-                    if accelerator.is_main_process:
-                        os.makedirs(os.path.dirname(save_path), exist_ok=True)
-                        accelerator.save(params, save_path)
-                        optim_val_loss = val_loss
-                        logger.print("save EMA params")
-                        
-                        del params
+            # save ema model
+            if not args.regardless_metrics_save:
+                save_check_flag = save_checker(val_acc_dict, val_loss, optim_val_loss) 
             else:
-                save_or_not = True
+                save_check_flag = True
+            if save_check_flag and accelerator.is_main_process:
+                params = accelerator.unwrap_model(ema_net.ema_model).state_dict()
                 
+                os.makedirs(os.path.dirname(save_path), exist_ok=True)
+                accelerator.save(params, save_path)
+                optim_val_loss = val_loss
+                logger.print(f">>> [green](validation)[/green] {ep=} - save EMA params")
+        
         # checkpointing the running state
         checkpoint_flag = False if args.checkpoint_every_n is None \
                             else ep % args.checkpoint_every_n == 0
         if checkpoint_flag:
-            logger.print(f'>>> save sate of {ep=}')
+            logger.print(f'>>> [red](checkpoint)[/red] {ep=} - save training state')
             output_dir = f"ep_{ep}"
             if args.output_dir is not None:
                 output_dir = os.path.join(args.output_dir, output_dir)
-                
-            # ref to deepspeed.runtime.engine.DeepSpeedEngine.save_checkpoint
-            if accelerator.is_main_process:
-                accelerator.save_state(output_dir)
-            
-            # save ema_model
-            if accelerator.is_main_process:
-                ema_params = ema_net.state_dict()
-                accelerator.save(ema_params, save_path)
-                
-                del ema_params
-                logger.print(f'>>> save EMA params of {ep=}')
+            # save training state
+            accelerator.save_state(output_dir)
         
+        # no validation, save ema model params per checkpoint_every_n
+        if args.checkpoint_every_n is None and eval_every_epochs == -1:
+            logger.info('>>> [blue]EMA[/blue] - no validation, save ema model params')
+            ema_params = accelerator.unwrap_model(ema_net.ema_model).state_dict()
+            accelerator.save(ema_params, save_path)
+            
         # ep_loss average  
         ep_loss /= i
         ep_loss_dict = ave_ep_loss(ep_loss_dict, i)

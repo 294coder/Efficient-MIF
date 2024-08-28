@@ -8,22 +8,7 @@ from typing import List, Tuple, Optional, Union
 
 class Identity:
     def __call__(self, *args):
-        # args is a tuple
-        # return is also a tuple
         return args
-
-# WV3_GT_MEAN = [0.13435693, 0.15736127, 0.19913845, 0.17137502, 0.13985378,
-#                0.16384054, 0.21204206, 0.1553395]
-# WV3_GT_STD = [0.04436018, 0.07571019, 0.12324945, 0.12895705, 0.12202228,
-#               0.10989053, 0.13726164, 0.1000899]
-# WV3_PAN_MEAN = [0.19546394]
-# WV3_PAN_STD = [0.11308921]
-#
-# QB_GT_MEAN = [0.08384636, 0.10903837, 0.06165434, 0.07774738]
-# QB_GT_STD = [0.04095699, 0.07015568, 0.05757316, 0.07613233]
-# QB_PAN_MEAN = [0.0815676]
-# QB_PAN_STD = [0.05739738]
-
 
 class WV3Datasets(data.Dataset):
     def __init__(
@@ -206,32 +191,3 @@ def make_datasets(
     val_ds = WV3Datasets(val_set, hp=hp, aug_prob=aug_probs[1])
     return train_ds, val_ds
 
-
-if __name__ == "__main__":
-    path = "/Data2/DataSet/pansharpening/training_data/train_wv3.h5"
-    # train_ds, val_ds = make_datasets(path, aug_probs=(0., 0.))
-    file = h5py.File("/home/ZiHanCao/datasets/pansharpening/qb/training_qb/valid_qb.h5")
-    train_ds = WV3Datasets(file, full_res=False)
-    train_dl = data.DataLoader(train_ds, 128, shuffle=True)
-    for pan, ms, lms, gt in train_dl:
-        import matplotlib.pyplot as plt
-        import seaborn as sns
-
-        plot_gt = gt[2, :3].permute(1, 2, 0) * torch.tensor(
-            train_ds.gt_std[:3]
-        ) + torch.tensor(train_ds.gt_mean[:3])
-        ori_gt = gt * torch.tensor(train_ds.gt_std).view(1, 4, 1, 1) + torch.tensor(
-            train_ds.gt_mean
-        ).view(1, 4, 1, 1)
-        print(pan.mean(), ms.mean(), lms.mean(), ori_gt.mean())
-        print(pan.min(), ms.min(), lms.min(), ori_gt.min())
-        print(pan.max(), ms.max(), lms.max(), ori_gt.max())
-        plt.imshow(plot_gt)
-        plt.show()
-        sns.distplot(gt.flatten().numpy())
-        plt.show()
-        sns.distplot(ori_gt.flatten().numpy())
-        plt.show()
-        # assert pan.shape[-1] == 64 and ms.shape[-1] == 16 and lms.shape[-1] == 64 and gt.shape[
-        # -1] == 64, f'{pan.shape, ms.shape, lms.shape, gt.shape}'
-        break

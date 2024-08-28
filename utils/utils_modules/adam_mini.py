@@ -2,7 +2,6 @@ import torch
 from torch.optim.optimizer import Optimizer
 import math
 import torch.distributed as dist
-from torch.optim.optimizer import _dispatch_sqrt
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 from torch.distributed._tensor import Replicate

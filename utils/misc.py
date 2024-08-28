@@ -6,9 +6,10 @@ import os
 import os.path as osp
 import random
 import time
-from typing import Dict, Iterable, Union
+from typing import Dict, Iterable, Sequence, Union
 import importlib
 import h5py
+import kornia.augmentation as K
 from fvcore.nn import FlopCountAnalysis, flop_count_table
 
 import yaml
@@ -28,6 +29,8 @@ def exists(val):
 def default(val, d):
     return val if exists(val) else d
 
+def is_none(val):
+    return val in ('none', 'None', 'NONE', None)
 
 def set_all_seed(seed=2022):
     torch.manual_seed(seed)
@@ -53,6 +56,10 @@ def to_tensor(*args, device, dtype):
         out.append(torch.tensor(a, dtype=dtype).to(device))
     return out
 
+def args_no_str_none(value: str) -> "str | None":
+    if value.lower() == "none":
+        return None
+    return value
 
 def to_device(*args, device):
     out = []
@@ -149,7 +156,42 @@ def y_pred_model_colored(vis: torch.Tensor, enable: bool=True):
             
     finally:
         pass
+    
+
+class WindowBasedPadder(object):
+    def __init__(self, window_size=64) -> None:
+        self.window_size = window_size
+        self.padding_fn = None
+
+    def find_least_pad(self, base_size: tuple, window_size: int):
+        least_size = []
+        for b_s in base_size:
+            if b_s % window_size == 0:
+                least_size.append(b_s)
+            else:
+                mult = b_s // window_size
+                mult += 1
+                least_size.append(mult * window_size)
+        return least_size
+
+    def __call__(self, img: torch.Tensor, size: Sequence[int]=None, no_check_pad: bool = False):
+        if no_check_pad:
+            assert self.padding_fn is not None
+            return self.padding_fn(img)
         
+        if size is not None:
+            self._last_img_ori_size = size
+            self.padding_fn = K.PadTo(size)
+        else:
+            pad_size = self.find_least_pad(img.shape[-2:], self.window_size)
+            self._last_img_ori_size = img.shape[-2:]
+            self.padding_fn = K.PadTo(pad_size)
+            
+        return self.padding_fn(img)
+
+    def inverse(self, img: torch.Tensor):
+        return self.padding_fn.inverse(img, size=self._last_img_ori_size)
+
 
 def h5py_to_dict(file: h5py.File, keys=None) -> dict[str, np.ndarray]:
     """get all content in a h5py file into a dict contains key and values
@@ -334,8 +376,8 @@ def print_args(args):
         print(f"{k}: {v}")
 
 
-def yaml_load(name, base_path="./configs"):
-    path = osp.join(base_path, name + "_config.yaml")
+def yaml_load(name, base_path="./configs", end_with="_config.yaml"):
+    path = osp.join(base_path, name + end_with)
     if osp.exists(path):
         f = open(path)
         cont = f.read()
@@ -357,9 +399,16 @@ def config_py_load(name, base_path="configs"):
 
 
 class NameSpace:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+    
+    @property
+    def attrs(self):
+        return self.__dict__
+    
     def to_dict(self):
         out = {}
-        d = self.__dict__
+        d = self.attrs
         for k, v in d.items():
             if isinstance(v, NameSpace):
                 out[k] = v.to_dict()
@@ -370,19 +419,25 @@ class NameSpace:
     def __repr__(self, d=None, nprefix=0):
         repr_str = ""
         if d is None:
-            d = self.__dict__
+            d = self.attrs
         for k, v in d.items():
             if isinstance(v, NameSpace):
                 repr_str += (
                     "  " * nprefix
                     + f"{k}: \n"
-                    + f"{self.__repr__(v.__dict__, nprefix + 1)}"
+                    + f"{self.__repr__(v.attrs, nprefix + 1)}"
                 )
             else:
                 repr_str += "  " * nprefix + f"{k}: {v}\n"
 
         return repr_str
+    
+    def __getitem__(self, item):
+        return self.attrs[item]
 
+    def __setitem__(self, key, value):
+        setattr(self.attrs, key, value)
+    
 
 def recursive_search_dict2namespace(d: Dict):
     """
@@ -606,18 +661,30 @@ if __name__ == "__main__":
     # )
 
 
-    vis = torch.randn(1, 3, 256, 256).clip(0, 1)
-    ir =  torch.randn(1, 1, 256, 256).clip(0, 1)
+    # vis = torch.randn(1, 3, 256, 256).clip(0, 1)
+    # ir =  torch.randn(1, 1, 256, 256).clip(0, 1)
 
     
-    model = lambda vis, ir: vis
+    # model = lambda vis, ir: vis
 
-    with y_pred_model_colored(vis, enable=True) as (y, back_to_rgb):
-        pred_y = model(y, ir)
-        pred_rgb = back_to_rgb(pred_y)
+    # with y_pred_model_colored(vis, enable=True) as (y, back_to_rgb):
+    #     pred_y = model(y, ir)
+    #     pred_rgb = back_to_rgb(pred_y)
         
-    # assert equal
-    print(torch.isclose(pred_rgb, vis))
+    # # assert equal
+    # print(torch.isclose(pred_rgb, vis))
     
-    mean_diff = torch.mean(torch.abs(vis - pred_rgb))
-    print("mean difference:", mean_diff.item())
+    # mean_diff = torch.mean(torch.abs(vis - pred_rgb))
+    # print("mean difference:", mean_diff.item())
+    
+    d = dict(
+        a=1, b=2,
+        c=dict(
+            ca=1,
+            cb=2,
+        )
+    )
+    
+    args = NameSpace(**d)
+    print(args.a)
+    print(args['c']['ca'])

@@ -19,7 +19,7 @@ import sys
 sys.path.append('./')
 from utils.misc import is_main_process
 from utils.deepspeed_ema import DeepspeedEMA
-from utils.utils_modules import Adam_mini
+# from utils.utils_modules import Adam_mini
 
 
 class IdentityScheduler(torch.optim.lr_scheduler._LRScheduler):
@@ -136,7 +136,7 @@ def get_scheduler(optim, **kwargs):
         raise NotImplementedError
 
 
-def get_optimizer(model, params, **kwargs):
+def get_optimizer(model: torch.nn.Module, params: "Iterable | dict", **kwargs):
     name = kwargs["name"]
     kwargs.pop("name")
     if name == "sgd":
@@ -145,6 +145,9 @@ def get_optimizer(model, params, **kwargs):
         return optim.Adam(params, **kwargs)
     elif name == "adamw":
         return optim.AdamW(params, **kwargs)
+    elif name == 'lion':
+        from lion_pytorch import Lion
+        return Lion(params, betas=(0.95, 0.98), use_triton=True, **kwargs) 
     elif name == 'fusedadam':
         return deepspeed.ops.adam.FusedAdam(params, **kwargs)
     elif name == 'schedulefree-adam':

@@ -1,13 +1,14 @@
-import logging.handlers
 import os
 import json
 import logging
 from datetime import datetime
 from functools import partial
 import signal
-from typing import Any, Dict, List, Optional, Union, Sequence, Iterable, Protocol
+from typing import Any, Dict, List, Optional, Union, Protocol
+from collections.abc import Sequence, Iterable
 from contextlib import contextmanager
 
+import loguru
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -16,8 +17,6 @@ from torch import nn
 from torchvision.utils import make_grid
 import shortuuid
 
-import sys
-sys.path.append('./')
 from utils.misc import NameSpace, default, is_main_process
 from utils.visualize import get_spectral_image_ready
 
@@ -25,7 +24,6 @@ import time
 from rich.console import Console
 from rich.logging import RichHandler
 from importlib import reload
-reload(logging)
 
 def get_time(sec):
     h = int(sec//3600)
@@ -59,7 +57,7 @@ def save2json_file(d: dict, path: str, mode: str = "w", indent: int = 4):
 def loss_dict2str(
     loss_dict: "dict[int, float | torch.Tensor]", 
     world_size: int = 1, 
-    round_fp: int = 4
+    round_fp: int = 6
 ) -> str:
     log_str = ""
     for k, v in loss_dict.items():
@@ -67,6 +65,7 @@ def loss_dict2str(
     return log_str
 
 
+## decrepted
 class TrainStatusLogger(object):
     def __init__(
         self, id="None", path="./train_status/status.pt", resume=False, args=None
@@ -221,18 +220,38 @@ def generate_id(length: int = 8) -> str:
     return str(run_gen.random(length))
 
 
-def easy_logger(level='INFO'):
-    format_str = "%(message)s"
-    rich_handler = RichHandler(show_path=False, level=level, markup=True)
-    logging.basicConfig(format=format_str,
-                        level=level,
-                        datefmt='%X',
-                        handlers=[rich_handler],
-                        )
+def easy_logger(level='INFO', format_str: str=None, func_name: str=None):
+    reload(logging)
+    
+    if format_str is not None and func_name is not None:
+            format_str = "%(func_name)s: " + format_str
+    elif format_str is None and func_name is not None:
+        format_str = "%(func_name)s: %(message)s"
+    else:
+        format_str = "%(message)s"
+        
+    file_name = os.environ.get('LOG_FILE', None)
+    if file_name:
+        console = Console(file=open(file_name, 'a+'))
+    else:
+        console = None
+        
+    class FuncNameFilter(logging.Filter):
+        def filter(self, record):
+            record.func_name = func_name
+            return True
+    
+    rich_handler = RichHandler(console=console, show_path=False, level=level, markup=True)
+    rich_handler.setFormatter(logging.Formatter(format_str, datefmt='%X'))
+    
+    logger = logging.getLogger(__name__)
+    logger.setLevel(level)
+    logger.addHandler(rich_handler)
     
     class ProtocalLogger(Protocol):
         @classmethod
-        def print(ctx, msg, level: Union[str, int]="INFO"):
+        def print(ctx, *msg, sep=" ", level: str | int="INFO"):
+            msg = sep.join(map(str, msg))
             if isinstance(level, str):
                 level = eval(f'logging.{level.upper()}')
             logger.log(level, msg, extra={"markup": True})
@@ -250,18 +269,23 @@ def easy_logger(level='INFO'):
             pass
         
         @classmethod
-        def error(ctx, msg, raise_error: bool=False, error_type=None):
+        def error(ctx, *msg, sep=" ", raise_error: bool=False, error_type=None):
+            msg = sep.join(map(str, msg))
             ctx.print(msg, level='ERROR')
             if raise_error:
                 if error_type is not None:
                     raise error_type(msg)
                 
                 raise RuntimeError(msg)
-            
+                
+    # add filter to add func_name to log
+    if func_name is not None:
+        logger.addFilter(FuncNameFilter())
     
-    logger: ProtocalLogger = logging.getLogger(__name__)
-    # logger.addHandler(RichHandler(show_path=False))
+    # logger signature
+    logger: ProtocalLogger
     
+    # add attributes to logger
     logger.print = ProtocalLogger.print
     logger.debug = partial(ProtocalLogger.print, level='DEBUG')
     logger.info = partial(ProtocalLogger.print, level='INFO')
@@ -289,6 +313,8 @@ class LoguruLogger:
                format=None,
                filter=None,
                **kwargs) -> "_logger.Logger":
+        reload(loguru)
+        
         if cls._first_import:
             cls._logger.remove()  # the first time import
             cls.console = Console(color_system=None)
@@ -364,6 +390,8 @@ def get_logger(
     :return: logger and List[handlers]
     """
     assert name is not None, "@param name should not be None"
+    reload(logging)
+    
     # assert base_path is not None, "@param base_path should not be None"
     if not show_pid:
         # format_str = "[%(asctime)s - %(funcName)s]-%(levelname)s: %(message)s"
@@ -375,14 +403,11 @@ def get_logger(
         # )
         format_str = "pid: %(thread)d) %(message)s"
     rich_handler = RichHandler(show_path=False, markup=True)
-    logging.basicConfig(
-        level=std_level, 
-        format=format_str, 
-        datefmt="[%X]",
-        handlers=[rich_handler]
-    )
+    rich_handler.setFormatter(logging.Formatter(format_str, datefmt='%X'))
+
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
+    logger.addHandler(rich_handler)
 
     hdls = []
 
@@ -417,22 +442,24 @@ def get_logger(
         file_console = None
         file_handler = None
         file_log_dir = None
+        file_log_path = None
             
     for handler in logger.handlers:
         handler.addFilter(TimeFilter())
         
-    def log_print(*msg, level="INFO", dist=False, proc_id=None):
+    def log_print(*msg, sep=" ", level="INFO", dist=False, proc_id=None):
         if dist or is_main_process():
             if isinstance(level, str):
                 level_int = eval(f"logging.{level}")
             msgs = f"{proc_id=} - " if proc_id is not None else ""
-            for s in msg:
-                msgs += s
+            msgs += sep.join(map(str, msg))
             logger.log(level=level_int, msg=msgs)
     
+    # register some attrs
     logger.print = log_print
     logger._console = rich_handler.console
     logger._file_console = file_console
+    logger._file_path = file_log_path
 
     return logger, hdls, file_log_dir
 
@@ -525,7 +552,8 @@ class NoneLogger:
         args.logger_config.name += "_" + args.run_id + f"_{args.comment}"
         name = args.logger_config.name
         
-        self.log_file_dir = os.path.join(args.logger_config.base_path, args.full_arch, args.dataset, name)
+        self.log_file_dir = os.path.join(args.logger_config.base_path,
+                                         args.full_arch, args.dataset, name)
         
     @property    
     def console(self):
@@ -564,7 +592,7 @@ class NoneLogger:
             
     def info(self, *msg, dist=False, proc_id=None):
         if dist or is_main_process():
-            level_int = 'INFO'
+            level_int = logging.INFO
             msgs = f"{proc_id=} - " if proc_id is not None else ""
             for s in msg:
                 msgs += s
@@ -572,7 +600,7 @@ class NoneLogger:
             
     def debug(self, *msg, dist=False, proc_id=None):
         if dist or is_main_process():
-            level_int = 'DEBUG'
+            level_int = logging.DEBUG
             msgs = f"{proc_id=} - " if proc_id is not None else ""
             for s in msg:
                 msgs += s
@@ -580,7 +608,7 @@ class NoneLogger:
             
     def warning(self, *msg, dist=False, proc_id=None):
         if dist or is_main_process():
-            level_int = 'WARNING'
+            level_int = logging.WARNING
             msgs = f"{proc_id=} - " if proc_id is not None else ""
             for s in msg:
                 msgs += s
@@ -588,7 +616,7 @@ class NoneLogger:
             
     def error(self, *msg, dist=False, proc_id=None):
         if dist or is_main_process():
-            level_int = 'ERROR'
+            level_int = logging.ERROR
             msgs = f"{proc_id=} - " if proc_id is not None else ""
             for s in msg:
                 msgs += s
@@ -602,7 +630,6 @@ class TensorboardLogger:
         tsb_logdir=None,
         comment=None,
         file_stream_log=True,
-        # TODO: yaml file or json file for config
         config_file_mv="./configs",
         config_file_type="yaml",
         method_dataset_as_prepos=False
@@ -619,7 +646,6 @@ class TensorboardLogger:
         self.grad_dict = {}
         # if not os.path.exists(logdir):
         #     os.mkdir(logdir)
-        self.writer = SummaryWriter(tsb_logdir, comment)
         self.hooks = {}
         self.watch_type = "None"
 
@@ -645,10 +671,20 @@ class TensorboardLogger:
             self.print(
                 f"\nmove config file to {os.path.abspath(self.log_file_dir)}", level="INFO"
             )
+            
+        self.writer = SummaryWriter(default(tsb_logdir, self.log_file_dir), comment)
+            
+        # set file path to os.environ
+        os.environ['LOG_FILE'] = self.logger_file_path
+        self.file_logger.debug(f'set os environ `LOG_FILE`={self.logger_file_path}')
     
     @property    
-    def console(self):
+    def console(self) -> Console:
         return self.file_logger._console
+    
+    @property
+    def logger_file_path(self) -> str:
+        return self.file_logger._file_path
     
     @property
     def file_console(self):
@@ -707,10 +743,12 @@ class TensorboardLogger:
         self.writer.add_image(name, self.check_tensor_float(image), epoch, dataformats="CHW")
 
     @is_main_process
-    def log_images(self, batch_imgs: Sequence, nrow: int, names: Sequence,
+    def log_images(self, batch_imgs: Sequence, nrow: int, names: Sequence, task: str,
                    epoch: int, ds_name: str, **grid_kwargs):
+        assert task in ['fusion', 'sharpening'], '@task should be fusion or sharpening'
+        
         for batch_img, name in zip(batch_imgs, names):
-            batch_img = get_spectral_image_ready(self.check_tensor_float(batch_img), name, ds_name)
+            batch_img = get_spectral_image_ready(self.check_tensor_float(batch_img), name, task, ds_name)
             grid_img = make_grid(batch_img, nrow=nrow, **grid_kwargs)
             self.log_image(grid_img, name, epoch)
 
