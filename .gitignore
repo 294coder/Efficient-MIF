@@ -33,7 +33,9 @@ HyperSpectralToolbox/
 /Matlab-Test-Package/
 **wandb/
 **runs/
+**.pytest_cache/
 downstreams/
+model/mamba_scan/
 
 
 要比的方法.md

@@ -1,11 +1,3 @@
-# GPL License
-# Copyright (C) UESTC
-# All Rights Reserved
-#
-# @Time    : 2023/6/21 1:38
-# @Author  : Xiao Wu
-# @reference:
-#
 from functools import partial
 from typing import Tuple, Union
 
@@ -15,13 +7,11 @@ import torch.nn.functional as F
 from torch import Tensor
 
 from model.module import PatchMergeModule
-PatchMergeModule = PatchMergeModule.PatchMergeModule
-
-MODELS = {}
 
 
+## TODO: old import fasion, now we directly import from the model path
 # register all model name in a global dict
-
+MODELS = {}
 
 # use it in a decorator way
 # e.g.
@@ -88,37 +78,3 @@ class BaseModel(ABC, nn.Module):
     @abstractmethod
     def _forward_implem(self, *args, **kwargs):
         raise NotImplementedError
-
-
-# -------------------------legacy code-----------------------------
-# Fix inference problem, when the model needs much gpu memory
-# patchify the input image into several patches with patch size fixed
-# at much less spatial size, e.g. (64, 64) to reduce gpu memory
-# usage.
-
-# thanks xiao-woo offering this code!
-# -----------------------------------------------------------------
-
-
-# implement tf.gather_nd() in pytorch
-def gather_nd(tensor, indexes, ndim):
-    """
-    inputs = torch.randn(1, 3, 5)
-    base = torch.arange(3)
-    X_row = base.reshape(-1, 1).repeat(1, 5)
-    lookup_sorted, indexes = torch.sort(inputs, dim=2, descending=True)
-    print(inputs)
-    print(indexes, indexes.shape)
-    # print(gathered)
-    print(gather_nd(inputs, indexes, [1, 2]))
-    """
-    if len(ndim) == 2:
-        base = torch.arange(indexes.shape[ndim[0]])
-        row_index = base.reshape(-1, 1).repeat(1, indexes.shape[ndim[1]])
-        gathered = tensor[..., row_index, indexes]
-    elif len(ndim) == 1:
-        base = torch.arange(indexes.shape[ndim[0]])
-        gathered = tensor[..., base, indexes]
-    else:
-        raise NotImplementedError
-    return gathered

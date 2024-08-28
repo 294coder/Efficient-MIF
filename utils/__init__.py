@@ -11,9 +11,7 @@ os.environ["HF_HOME"] = os.path.join(cache_dir, "hf_home")
 
 from dataclasses import dataclass
 
-from ._metric_legacy import *
 from .metric_sharpening import *
-from .metric_VIF import *
 from .log_utils import *
 from .misc import *
 from .misc import recursive_search_dict2namespace as convert_config_dict
