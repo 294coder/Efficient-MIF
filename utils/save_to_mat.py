@@ -8,9 +8,6 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 
 
-# file = r'/Data2/ZiHanCao/exps/panformer/visualized_img/data_dcformermwsa_new_cave_x8_ref.mat'
-
-
 def process_mat_to_single_mat(file, show=True, force_all=True):
     name = file.split('/')[-1].strip('.mat')
     path = f'/Data2/ZiHanCao/exps/panformer/visualized_img/{name}'

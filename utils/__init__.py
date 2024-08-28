@@ -4,15 +4,12 @@ warnings.filterwarnings("ignore", module="torch.utils")
 warnings.filterwarnings("ignore", module="deepspeed.accelerator")
 
 root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-cache_dir = os.path.join(root_dir, 'cache')
+cache_dir = os.path.join(root_dir, '.cache')
 
 os.environ["MPLCONFIGDIR"] = os.path.join(cache_dir, "matplotlib")
 os.environ["HF_HOME"] = os.path.join(cache_dir, "hf_home")
-os.environ["MPLCONFIGDIR"] = os.path.join(cache_dir, "matplotlib")
 
 from dataclasses import dataclass
-import sys
-sys.path.append('./')
 
 from ._metric_legacy import *
 from .metric_sharpening import *
