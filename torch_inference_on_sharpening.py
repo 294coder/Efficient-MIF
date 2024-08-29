@@ -80,39 +80,28 @@ if split_patch:
 print("=" * 90)
 
 # ======================worldview3 checkpoint============
-# p = './weight/lformer_R_3knyr4dr.pth'  # lformer reduced
+# p = './weight/lformer_R_wv3.pth'  # LFormer
 
-
-# p = '/Data2/ZiHanCao/exps/panformer/weight/panMamba_2t57jdx5.pth'  # panMamba base model
-# p = '/Data2/ZiHanCao/exps/panformer/weight/2024-04-10-23-37-39_panMamba_2fol5u40/ep_700/best_model.pth'
-# p = 'weight/2024-04-08-21-29-14_panMamba_2ax3fhfp/panMamba_2ax3fhfp.pth'  # panMamba tiny model
-
+# p = 'weight/panMamba_2ax3fhfp.pth'  # LEMamba
 # ========================================================
 
 # ===============GF checkpoint=====================
-# p = './weight/lformer_3dvlsog6.pth'  # lformer swin
-# p = './weight/lformer_R_2nj70ua7.pth'  # lformer reduced
-# p = './weight/lformer_R_150ksqcw.pth'
+# p = './weight/lformer_R_gf2.pth'  # LFormer
 
-# p = './weight/panMamba_7w0ezc23.pth'  # panMamba (mamba in mamba)
+# p = 'weight/panMamba_313odzav.pth'  # LEMamba
 # =================================================
 
 # ================HISI CAVE checkpoint=============
 ##### cave_x4
-# p = './weight/lformer_3k98ra6i.pth'   # lformer_swin
-# p = './weight/lformer_blpk13eu.pth'  # lformer swin
-# p = './weight/lformer_R_dbgopsrt.pth'  # lformer_reduced
+# p = './weight/lformer_R_cave_x4.pth'  # LFormer
 
 
 ####### cave_x8
-# p = './weight/panMamba_2qvtefv8.pth'  # panMamba
-# p = '/Data2/ZiHanCao/exps/panformer/weight/2024-04-05-05-30-15_panMamba_307kosza/ep_760/best_model.pth'
-# p = '/Data2/ZiHanCao/exps/panformer/weight/2024-04-08-13-33-03_panMamba_3d8t0rg1/panMamba_3d8t0rg1.pth'
 
+# p = 'weight/2024-04-08-13-33-03_panMamba_3d8t0rg1/panMamba_3d8t0rg1.pth'
 ##### harvard_x8
 
 # p = './weight/panMamba_1wotinai.pth'  # panMamba
-
 # =================================================
 
 
