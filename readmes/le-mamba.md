@@ -110,11 +110,12 @@ LE-Mamba reaches SOTA performances on widely-used Pansharpening and HMIF dataset
 
 # Citation
 If you find this work useful, please consider citing:
-```
-@article{cao2024novel,
-  title={A novel state space model with local enhancement and state sharing for image fusion},
-  author={Cao, Zihan and Wu, Xiao and Deng, Liang-Jian and Zhong, Yu},
-  journal={arXiv preprint arXiv:2404.09293},
-  year={2024}
+```bibtex
+@inproceedings{
+    cao2024novel,
+    title={A novel state space model with local enhancement and state sharing for image fusion},
+    author={Cao, Zihan and Wu, Xiao and Deng, Liang-Jian and Zhong, Yu},
+    booktitle={ACM Multimedia 2024 (ACM MM)},
+    year={2024}
 }
 ```
