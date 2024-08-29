@@ -13,6 +13,8 @@
 </p>
 </div>
 
+[![arXiv](https://img.shields.io/badge/arXiv-2404.09293-b31b1b.svg)](https://arxiv.org/abs/2404.09293)
+
 abtract: In image fusion tasks, images from different sources possess distinct characteristics. This has driven the development of numerous methods to explore better ways of fusing them while preserving their respective characteristics.
 Mamba, as a state space model, has emerged in the field of natural language processing. Recently, many studies have attempted to extend Mamba to vision tasks. However, due to the nature of images different from causal language sequences, the limited state capacity of Mamba weakens its ability to model image information. Additionally, the sequence modeling ability of Mamba is only capable of spatial information and cannot effectively capture the rich spectral information in images. Motivated by these challenges, we customize and improve the vision Mamba network designed for the image fusion task. Specifically, we propose the local-enhanced vision Mamba block, dubbed as LEVM. The LEVM block can improve local information perception of the network and simultaneously learn local and global spatial information. Furthermore, we propose the state sharing technique to enhance spatial details and integrate spatial and spectral information. Finally, the overall network is a multi-scale structure based on vision Mamba, called LE-Mamba. Extensive experiments show the proposed methods achieve state-of-the-art results on multispectral pansharpening and multispectral and hyperspectral image fusion datasets, and demonstrate the effectiveness of the proposed approach.
 
@@ -57,7 +59,7 @@ accelerate_main.py \
 --dataset <dataset_name> \
 --num_worker 6 -e 800 -b 32 --aug_probs 0. 0. --loss l1ssim --grad_accum_steps 2 \
 --checkpoint_every_n 20 --val_n_epoch 20  \
---comment "panRWKV config on wv3 dataset model" \
+--comment "LE-Mamba config on wv3 dataset model" \
 --log_metric \
 --logger_on \
 ```

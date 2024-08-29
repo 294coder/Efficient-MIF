@@ -31,11 +31,13 @@ __all__ = [
 ]
 
 _all_modules = [
-    'LEMamba'
+    'LEMamba',
+    'LFormer'
 ]
 
 _all_model_class_name = [
-    'LEMambaNet'
+    'LEMambaNet',
+    'AttnFuseMain'
 ]
 
 assert len(_all_modules) == len(_all_model_class_name), 'length of modules and registry names should be the same'
@@ -69,11 +71,14 @@ def _active_load_module(module_name, model_class_name):
         raise ValueError(f'{dict_name} not found in LAZY_LOADER_DICT')
 
 
-# TODO: hydra import
+
+
+# FIXME: other importing behavior, now use lazy loading strategy in `lazy_load_network` method
+# or just input `-c config.yaml -m model_cls_path` in `accelerate_run_main.py`
 # ==============================================
 # register all models
 from .LEMamba import LEMambaNet
-
+from .LFormer import AttnFuseMain
 
 
 
@@ -92,13 +97,14 @@ from .LEMamba import LEMambaNet
 # ==============================================
 
 
-
-## FIXME: may cause conficts with other arguments in args that rely on static registered model name in main.py
 def import_model_from_name(name):
     module = importlib.import_module(name, package='model')
     model_cls = getattr(module, name)
     return model_cls
 
+
+# FIXME
+#! old loading method, will be deprecated
 def build_network(model_name: str=None, **kwargs) -> BaseModel:
     """
     build network from model name and kwargs

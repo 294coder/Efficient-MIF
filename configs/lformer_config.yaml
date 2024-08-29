@@ -26,23 +26,12 @@ path:
 network_configs:
   lformer:
     pan_dim: 1
-    lms_dim: 4 #102 #128
+    lms_dim: 4
     attn_dim: 64
     hp_dim: 64
     n_stage: 5
     patch_merge: yes
     crop_batch_size: 64
-    patch_size_list: [16, 64, 64]
-    scale: 4
-
-  lformer_ablation_skip:
-    pan_dim: 1
-    lms_dim: 8 #102 #128
-    attn_dim: 32
-    hp_dim: 32
-    n_stage: 5
-    patch_merge: yes
-    crop_batch_size: 32
     patch_size_list: [16, 64, 64]
     scale: 4
 
