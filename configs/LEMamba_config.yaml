@@ -14,17 +14,17 @@ max_norm: 0.03
 ema_decay: 0.995
 
 path:
-  wv3_train_path: "/Data2/ZiHanCao/datasets/pansharpening/wv3/training_wv3/train_wv3.h5"
-  wv3_val_path: "/Data2/ZiHanCao/datasets/pansharpening/wv3/reduced_examples/test_wv3_multiExm1.h5"
+  wv3_train_path: <your_path>/train_data/
+  wv3_val_path: <your_path>/val_data/
 
-  gf2_train_path: "/Data2/ZiHanCao/datasets/pansharpening/gf/training_gf2/train_gf2.h5"
-  gf2_val_path: "/Data2/ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5"
+  gf2_train_path: <your_path>/train_data/
+  gf2_val_path: <your_path>/val_data/
 
-  cave_x8_train_path: "/Data2/ZiHanCao/datasets/HISI/new_cave/x8/train_cave(with_up)x8_rgb_16.h5"
-  cave_x8_val_path: "/Data2/ZiHanCao/datasets/HISI/new_cave/x8/test_cave(with_up)x8_rgb.h5"
+  cave_x8_train_path: <your_path>/train_data/
+  cave_x8_val_path: <your_path>/val_data/
 
-  harvard_x8_train_path: "/Data2/ZiHanCao/datasets/HISI/new_harvard/x8/train_harvard(with_up)x8_rgb.h5"
-  harvard_x8_val_path: "/Data2/ZiHanCao/datasets/HISI/new_harvard/x8/test_harvard(with_up)x8_rgb.h5"
+  harvard_x8_train_path: <your_path>/train_data/
+  harvard_x8_val_path: <your_path>/val_data/
 
 network_configs:
   LEMamba:

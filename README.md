@@ -30,6 +30,8 @@ This framework is tested on Python 3.9.x / 3.11 and Pytorch 2.3.0 with CUDA 11.8
 
 
 # NEWS✨
+2024.08.31: Two papers for pansharpening and HMIF tasks are accepted by ACM MM 2024. You can find the guidances in Model Cards.
+
 2024.07.24: Some downstream tasks: a) detection task; b) segmentation task, c) depth estimation are ready to release.
 
 2024.06.27: We release VIS-IR and medical image fusion training scripts. 
@@ -178,12 +180,13 @@ We are planning to release some of them.
 # Citation
 
 If you find our works useful, please conside citing the following papers:
-```
-@article{cao2024novel,
-  title={A novel state space model with local enhancement and state sharing for image fusion},
-  author={Cao, Zihan and Wu, Xiao and Deng, Liang-Jian and Zhong, Yu},
-  journal={arXiv preprint arXiv:2404.09293},
-  year={2024}
+```bibtex
+@inproceedings{
+    cao2024novel,
+    title={A novel state space model with local enhancement and state sharing for image fusion},
+    author={Cao, Zihan and Wu, Xiao and Deng, Liang-Jian and Zhong, Yu},
+    booktitle={ACM Multimedia 2024 (ACM MM)},
+    year={2024}
 }
 
 @article{liang2024fourier,
@@ -191,10 +194,19 @@ If you find our works useful, please conside citing the following papers:
   author={Liang, Yu-Jie and Cao, Zihan and Deng, Liang-Jian and Wu, Xiao},
   journal={arXiv preprint arXiv:2404.15174},
   year={2024}
+
+
+@inproceedings{
+  hou2024linearlyevolved,
+  title={Linearly-evolved Transformer for Pan-sharpening},
+  author={Junming Hou and Zihan Cao and Naishan Zheng and Xuan Li and Xiaoyu Chen and Xinyang Liu and Xiaofeng Cong and Danfeng Hong and Man Zhou},
+  booktitle={ACM Multimedia 2024},
+  year={2024}
+}
 ```
 
 And some related works about image fusion may attract you:
-```
+```bibtex
 @article{cao2024neural,
   title={Neural Shr$\backslash$" odinger Bridge Matching for Pansharpening},
   author={Cao, Zihan and Wu, Xiao and Deng, Liang-Jian},

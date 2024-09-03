@@ -336,10 +336,8 @@ def train(
             if args.output_dir is not None:
                 output_dir = os.path.join(args.output_dir, output_dir)
             
-            # save ema_model
-            if accelerator.is_main_process:
-                # training state
-                accelerator.save_state(output_dir)
+            # save training state
+            accelerator.save_state(output_dir)
                 
         # set train mode
         model.train()
