@@ -75,3 +75,14 @@ model/_PatchMergeModule.py
 !model/module/patch_merge_module/**/*.so
 **fuse_hidden*
 **/lock
+augmentation_pipes
+model/text_process_pipe/**
+
+
+
+
+
+
+
+
+
