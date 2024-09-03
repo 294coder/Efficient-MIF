@@ -14,14 +14,14 @@ max_norm: 0.03
 ema_decay: 0.999
 
 path:
-  wv3_train_path: "/Data2/ZiHanCao/datasets/pansharpening/wv3/training_wv3/train_wv3.h5"
-  wv3_val_path: "/Data2/ZiHanCao/datasets/pansharpening/wv3/reduced_examples/test_wv3_multiExm1.h5"
+  wv3_train_path: <your_path>/train_data/
+  wv3_val_path: <your_path>/val_data/
 
-  gf2_train_path: "/Data2/ZiHanCao/datasets/pansharpening/gf/training_gf2/train_gf2.h5"
-  gf2_val_path: "/Data2/ZiHanCao/datasets/pansharpening/gf/reduced_examples/test_gf2_multiExm1.h5"
+  gf2_train_path: <your_path>/train_data/
+  gf2_val_path: <your_path>/val_data/
 
-  cave_x4_train_path: "/Data2/ZiHanCao/datasets/HISI/new_cave/train_cave(with_up)x4.h5"
-  cave_x4_val_path: "/Data2/ZiHanCao/datasets/HISI/new_cave/test_cave(with_up)x4.h5"
+  cave_x4_train_path: <your_path>/train_data/
+  cave_x4_val_path: <your_path>/val_data/
 
 network_configs:
   lformer:
