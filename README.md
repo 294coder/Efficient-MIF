@@ -21,8 +21,9 @@ This a repository that allow you to efficiently train your network on multi-sour
 
 - *Pansharpening*,
 - *hyperspectral and multispectral image fusion (HMIF)*,
-- *visual and infared image fusion*,
-- *medical image fusion*.
+- *visual and infared image fusion (VIF), multi-exposure image fusion (MEF), multi-focus image fusion (MFF)*,
+- *medical image fusion*,
+> Ready to adapt to more image fusion tasks!
 
 > We call the first two as sharpening tasks and the latter two as fusion tasks.
 
@@ -30,7 +31,9 @@ This framework is tested on Python 3.9.x / 3.11 and Pytorch 2.3.0 with CUDA 11.8
 
 
 # NEWS✨
-2024.08.31: Two papers for pansharpening and HMIF tasks are accepted by ACM MM 2024. You can find the guidances in Model Cards.
+2024.09.27: Two papers (about **Implicit Neural Representation and Diffusion Models**) for pansharpening and HMIF tasks are accepted by _Neurips 2024_. Ready to release the code. Stay Tuned!
+
+2024.08.31: Two papers for pansharpening and HMIF tasks are accepted by _ACM MM 2024_. You can find the guidances in Model Cards.
 
 2024.07.24: Some downstream tasks: a) detection task; b) segmentation task, c) depth estimation are ready to release.
 
@@ -162,7 +165,7 @@ You can find our detailed descriptions of the proposed fusion models at `readmes
 | :------: | :------------------: | :--------: |
 | [LE-Mamba (ACM MM 24)](https://arxiv.org/abs/2404.09293) | Pansharpening; HMIF. | [README](readmes/le-mamba.md) |
 | [LFormer (ACM MM 24)](https://arxiv.org/pdf/2404.12804) | Pansharpening; HMIF. | [README](readmes/lformer.md) |
-
+| [FeINFN (Neurips 2024)]() | HMIF.| Ready to release the code |
 
 
 # About Dataset
