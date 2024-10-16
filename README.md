@@ -21,8 +21,8 @@ This a repository that allow you to efficiently train your network on multi-sour
 
 - *Pansharpening*,
 - *hyperspectral and multispectral image fusion (HMIF)*,
-- *visual and infared image fusion (VIF), multi-exposure image fusion (MEF), multi-focus image fusion (MFF)*,
-- *medical image fusion*,
+- *visible and (near-)infared image fusion (VIF), multi-exposure image fusion (MEF), multi-focus image fusion (MFF)*,
+- *medical image fusion (MIF)*,
 > Ready to adapt to more image fusion tasks!
 
 > We call the first two as sharpening tasks and the latter two as fusion tasks.
