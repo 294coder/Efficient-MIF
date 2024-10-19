@@ -165,7 +165,7 @@ You can find our detailed descriptions of the proposed fusion models at `readmes
 | :------: | :------------------: | :--------: |
 | [LE-Mamba (ACM MM 24)](https://arxiv.org/abs/2404.09293) | Pansharpening; HMIF. | [README](readmes/le-mamba.md) |
 | [LFormer (ACM MM 24)](https://arxiv.org/pdf/2404.12804) | Pansharpening; HMIF. | [README](readmes/lformer.md) |
-| [FeINFN (Neurips 2024)]() | HMIF.| Ready to release the code |
+| [FeINFN (Neurips 2024)]() | HMIF.| [README](readmes/FeINFN.md) |
 
 
 # About Dataset
