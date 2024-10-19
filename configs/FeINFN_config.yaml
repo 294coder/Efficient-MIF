@@ -1,0 +1,43 @@
+optimizer:
+  name: 'adamw'
+  lr: !!float 2e-4
+  weight_decay: 0.0
+
+lr_scheduler:
+  name: 'cos_anneal'
+  T_max: 300
+  eta_min: !!float 1e-5
+
+max_norm: 1e-4
+
+path:
+  cave_x4_train_path: <your_path>/train_data/
+  cave_x4_val_path: <your_path>/val_data/
+
+  harvard_x4_train_path: <your_path>/train_data/
+  harvard_x4_val_path: <your_path>/val_data/
+
+  cave_x8_train_path: <your_path>/train_data/
+  cave_x8_val_path: <your_path>/val_data/
+
+  harvard_x8_train_path: <your_path>/train_data/
+  harvard_x8_val_path: <your_path>/val_data/
+  
+network_configs:
+  FeINFN:
+    hsi_dim: 31 #128 #31 #102
+    msi_dim: 3  #3 #1  
+    NIR_dim: 33 #130 #33 #104
+    feat_dim: 128 
+    guide_dim: 128 
+    spa_edsr_num: 4 
+    spe_edsr_num: 4
+    mlp_dim: [256, 128] 
+    d_model: 2
+    scale: 4
+    patch_merge: no
+
+logger_config:
+  base_path: ./log_file/
+  name: FeINFN
+  file_mode: w

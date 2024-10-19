@@ -165,7 +165,7 @@ You can find our detailed descriptions of the proposed fusion models at `readmes
 | :------: | :------------------: | :--------: |
 | [LE-Mamba (ACM MM 24)](https://arxiv.org/abs/2404.09293) | Pansharpening; HMIF. | [README](readmes/le-mamba.md) |
 | [LFormer (ACM MM 24)](https://arxiv.org/pdf/2404.12804) | Pansharpening; HMIF. | [README](readmes/lformer.md) |
-| [FeINFN (Neurips 2024)]() | HMIF.| Ready to release the code |
+| [FeINFN (Neurips 2024)]() | HMIF.| [README](readmes/FeINFN.md) |
 
 
 # About Dataset
@@ -194,7 +194,7 @@ If you find our works useful, please conside citing the following papers:
 
 @article{liang2024fourier,
   title={Fourier-enhanced Implicit Neural Fusion Network for Multispectral and Hyperspectral Image Fusion},
-  author={Liang, Yu-Jie and Cao, Zihan and Deng, Liang-Jian and Wu, Xiao},
+  author={Liang, Yu-Jie and Cao, Zihan and Deng, ShangQi and Dou Hong-Xia and Deng, Liang-Jian},
   journal={arXiv preprint arXiv:2404.15174},
   year={2024}
 

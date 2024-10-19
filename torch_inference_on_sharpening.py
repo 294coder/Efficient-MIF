@@ -94,6 +94,7 @@ print("=" * 90)
 # ================HISI CAVE checkpoint=============
 ##### cave_x4
 # p = './weight/lformer_R_cave_x4.pth'  # LFormer
+# p = './weight/FeINFN_1z22vs4p.pth'    #FeINFN
 
 
 ####### cave_x8

@@ -36,6 +36,7 @@ HyperSpectralToolbox/
 **.pytest_cache/
 downstreams/
 model/mamba_scan/
+model/base_model_legacy.py
 
 
 要比的方法.md
