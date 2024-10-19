@@ -3,8 +3,8 @@ import math
 import torch.nn as nn
 import torch.nn.functional as F
 from model.module.fe_block import make_edsr_baseline, make_coord, ComplexGaborLayer, PositionalEmbedding, MLP_P, MLP, hightfre, ImplicitDecoder
-from model.module.criterion_metrics import *
-from model.base_model import BaseModel, register_model, PatchMergeModule
+from model.base_model import BaseModel, register_model
+from model.module import PatchMergeModule
     
 class FourierUnit(nn.Module):
 
