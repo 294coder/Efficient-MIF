@@ -22,7 +22,7 @@ abtract: Recently, implicit neural representations (INR) have made significant s
 <html>
 <body>
     <div class="image-container" style="text-align: center;">
-        <img src="figs/feinfn-teaser.png" alt="Image 1" width="100%">
+        <img src="../teasers/FeINFN.png" alt="Image 1" width="100%">
     </div>
 </body>
 </html>
