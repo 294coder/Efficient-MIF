@@ -80,7 +80,7 @@ If you find this work useful, please consider citing:
 ```bibtex
 @article{liang2024fourier,
   title={Fourier-enhanced Implicit Neural Fusion Network for Multispectral and Hyperspectral Image Fusion},
-  author={Liang, Yu-Jie and Cao, Zihan and Deng, Liang-Jian and Wu, Xiao},
+  author={Liang, Yu-Jie and Cao, Zihan and Deng, ShangQi and Dou Hong-Xia and Deng, Liang-Jian},
   journal={arXiv preprint arXiv:2404.15174},
   year={2024}
 }
