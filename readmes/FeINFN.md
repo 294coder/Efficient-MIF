@@ -62,6 +62,8 @@ You can refer to the testing script [`torch_inference_on_sharpening.py`](../torc
 
 To test the metrics, please see the main guidance in [`README.md`](../README.md).
 
+CAVE pretrained model is released [here](https://pan.baidu.com/s/1JMRidVmoXZ6tKbtsGmG__w?pwd=mtef) (BaiduYun Disk).
+
 For sharpening tasks (including pansharpening and HMIF tasks), you simply test the metrics in Matlab:
 ``` matlab
 cd Pansharpening_Hyper_SR_Matlab_Test_Package
