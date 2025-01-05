@@ -13,7 +13,6 @@ warnings.filterwarnings("ignore", module="torch")
 
 from utils import (
     AnalysisPanAcc,
-    AnalysisVISIRAcc,
     dict_to_str,
     prefixed_dict_key,
     res_image,

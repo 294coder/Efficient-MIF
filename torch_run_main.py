@@ -1,3 +1,9 @@
+"""
+do not use this file, use `accelerate_run_main.py` instead
+
+!! we will remove this file in the future
+"""
+
 import argparse
 import os
 import os.path as osp
